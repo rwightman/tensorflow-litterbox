@@ -20,14 +20,14 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from sfarm_data import SfarmData
+from sfarm_data import StateFarmData
 from inception import inception_train
 
 FLAGS = tf.app.flags.FLAGS
 
 
 def main(_):
-  dataset = SfarmData(subset=FLAGS.subset)
+  dataset = StateFarmData(subset=FLAGS.subset)
   assert dataset.data_files()
   if tf.gfile.Exists(FLAGS.train_dir):
     tf.gfile.DeleteRecursively(FLAGS.train_dir)

@@ -27,9 +27,8 @@ import os.path
 import re
 import tensorflow as tf
 
-import inception.image_processing
-import inception.inception_model as inception
-import inception.slim
+from inception.image_processing import *
+import inception.slim.inception_model as inception
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -223,7 +222,7 @@ def train(dataset):
 
     # Calculate the gradients for each model tower.
     tower_grads = []
-    for i in xrange(FLAGS.num_gpus):
+    for i in range(FLAGS.num_gpus):
       with tf.device('/gpu:%d' % i):
         with tf.name_scope('%s_%d' % (inception.TOWER_NAME, i)) as scope:
           # Split the batch of images and labels.
@@ -336,7 +335,7 @@ def train(dataset):
         FLAGS.train_dir,
         graph_def=sess.graph.as_graph_def(add_shapes=True))
 
-    for step in xrange(FLAGS.max_steps):
+    for step in range(FLAGS.max_steps):
       start_time = time.time()
       _, loss_value = sess.run([train_op, loss])
       duration = time.time() - start_time

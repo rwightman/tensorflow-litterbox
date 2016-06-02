@@ -18,26 +18,22 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from inception import DatasetRecord
+from inception.dataset_whole_file import DatasetWholeFile
 
-
-class SfarmData(DatasetRecord):
-  """ImageNet data set."""
+class StateFarmData(DatasetWholeFile):
+  """StateFarm data set."""
 
   def __init__(self, subset):
-    super(DatasetRecord, self).__init__('ImageNet', subset)
+    super(DatasetWholeFile, self).__init__('SFarm', subset)
 
   def num_classes(self):
     """Returns the number of classes in the data set."""
-    return 1000
+    return 10
 
   def num_examples_per_epoch(self):
     """Returns the number of examples in the data set."""
     # Bounding box data consists of 615299 bounding boxes for 544546 images.
-    if self.subset == 'train':
-      return 1281167
-    if self.subset == 'val':
-      return 50000
+    return self.num_files()
 
   def download_message(self):
     """Instruction to download/setup data."""

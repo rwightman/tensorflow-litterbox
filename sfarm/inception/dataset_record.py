@@ -29,18 +29,15 @@ import tensorflow as tf
 from abc import ABCMeta
 from abc import abstractmethod
 
-from .dataset import Dataset
-from .dataset import FLAGS
+from inception.dataset import Dataset
+from inception.dataset import FLAGS
 
 class DatasetRecord(Dataset):
   """A simple class for handling data sets."""
   __metaclass__ = ABCMeta
 
   def __init__(self, name, subset):
-    """Initialize dataset using a subset and the path to the data."""
-    assert subset in self.available_subsets(), self.available_subsets()
-    self.name = name
-    self.subset = subset
+    super(Dataset, self).__init__(name, subset)
 
   @abstractmethod
   def num_classes(self):

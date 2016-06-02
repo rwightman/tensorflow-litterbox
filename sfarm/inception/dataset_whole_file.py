@@ -33,9 +33,17 @@ from .dataset import Dataset
 
 FLAGS = tf.app.flags.FLAGS
 
-# Basic model parameters.
-tf.app.flags.DEFINE_string('data_dir', '/tmp/mydata',
-                           """Path to the raw data, i.e. """)
+def get_image_paths(folder):
+  file_list = []
+  dir_list = []
+  for root, subdirs, files in os.walk(folder, topdown=False):
+    rel_path = os.path.relpath(root, folder)
+    jpeg_files = [os.path.join(rel_path, f) for f in files if os.path.splitext(f)[1].lower() in ('.jpg', '.jpeg')]
+    if rel_path and (jpeg_files or subdirs):
+      dir_list.append(rel_path)
+    if jpeg_files:
+      file_list.append(jpeg_files)
+  return file_list, dir_list[::-1]
 
 
 class DatasetWholeFile(Dataset):
@@ -44,24 +52,17 @@ class DatasetWholeFile(Dataset):
 
   def __init__(self, name, subset):
     """Initialize dataset using a subset and the path to the data."""
-    assert subset in self.available_subsets(), self.available_subsets()
-    self.name = name
-    self.subset = subset
+    super(Dataset, self).__init__(name, subset)
 
   @abstractmethod
   def num_classes(self):
     """Returns the number of classes in the data set."""
     pass
-    # return 10
 
   @abstractmethod
   def num_examples_per_epoch(self):
     """Returns the number of examples in the data subset."""
     pass
-    # if self.subset == 'train':
-    #   return 10000
-    # if self.subset == 'validation':
-    #   return 1000
 
   @abstractmethod
   def download_message(self):
