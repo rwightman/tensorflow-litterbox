@@ -37,7 +37,7 @@ class DatasetRecord(Dataset):
   __metaclass__ = ABCMeta
 
   def __init__(self, name, subset):
-    super(Dataset, self).__init__(name, subset)
+    super(DatasetRecord, self).__init__(name, subset, record=True)
 
   @abstractmethod
   def num_classes(self):

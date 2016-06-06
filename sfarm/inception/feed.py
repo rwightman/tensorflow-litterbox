@@ -1,13 +1,7 @@
 """Feed class"""
-
-
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
-
-from abc import ABCMeta
-from abc import abstractmethod
-import os
 
 import tensorflow as tf
 
@@ -40,36 +34,67 @@ tf.app.flags.DEFINE_integer('input_queue_memory_factor', 16,
                             """comments in code for more details.""")
 
 
-
 class Feed(object):
-    __metaclass__ = ABCMeta
 
-    def __init__(self, batch_size=None, num_preprocess_threads=None, num_readers=None):
+    def __init__(self, dataset, image_preprocess, batch_size=None, num_preprocess_threads=None, num_readers=None):
 
-        if not batch_size:
-            self.batch_size = FLAGS.batch_size
-        else:
-            self.batch_size = batch_size
+        self.dataset = dataset
+        if not dataset:
+            raise ValueError('Please provide a dataset')
+        print(dataset.name)
 
-        if not num_preprocess_threads:
-            self.num_preprocess_threads = FLAGS.num_preprocess_threads
-        else:
-            self.num_preprocess_threads = num_preprocess_threads
+        self.image_preprocess=image_preprocess
+        if not image_preprocess:
+            raise ValueError('Please provide an image preprocessor')
+
+        self.batch_size = FLAGS.batch_size if not batch_size else batch_size
+
+        self.num_preprocess_threads = FLAGS.num_preprocess_threads \
+            if not num_preprocess_threads else num_preprocess_threads
+        print(self.num_preprocess_threads)
         if self.num_preprocess_threads % 4:
             raise ValueError('Please make num_preprocess_threads a multiple '
                              'of 4 (%d % 4 != 0).', self.num_preprocess_threads)
 
-        if not num_readers:
-            self.num_readers = FLAGS.num_readers
-        else:
-            self.num_readers = num_readers
-        if num_readers < 1:
+        self.num_readers = FLAGS.num_readers if not num_readers else num_readers
+        if self.num_readers < 1:
             raise ValueError('Please make num_readers at least 1')
+
+        self.height = FLAGS.image_size
+        self.width = FLAGS.image_size
+        self.depth = 3
 
         print("Feed")
 
-    @abstractmethod
-    def batch_inputs(self, train=False):
+    def num_batches_per_epoch(self):
+        return self.dataset.num_examples_per_epoch() / self.batch_size
+
+    def inputs(self):
+        """Generate batches of images for evaluation.
+
+        See _batch_inputs.
+        """
+
+        # Force all input processing onto CPU in order to reserve the GPU for
+        # the forward inference and back-propagation.
+        with tf.device('/cpu:0'):
+            images, labels = self._batch_inputs(train=False)
+
+        return images, labels
+
+    def distorted_inputs(self):
+        """Generate batches of distorted images for training.
+
+        See _batch_inputs
+        """
+
+        # Force all input processing onto CPU in order to reserve the GPU for
+        # the forward inference and back-propagation.
+        with tf.device('/cpu:0'):
+            images, labels = self._batch_inputs(train=True)
+        return images, labels
+
+    def _batch_inputs(self, train=False):
         """Construct batches of training or evaluation examples from the image dataset.
 
         Args:
@@ -83,30 +108,157 @@ class Feed(object):
                                              image_size, 3].
           labels: 1-D integer Tensor of [FLAGS.batch_size].
         """
-        pass
+        with tf.name_scope('batch_processing'):
 
-    def inputs(self):
-        """Generate batches of images for evaluation.
+            images_and_labels = self._bath_inputs_record(train) if self.dataset.record \
+                else self._batch_inputs_whole_file(train)
 
-        See batch_inputs.
+            images, label_index_batch = tf.train.batch_join(
+                images_and_labels,
+                batch_size=self.batch_size,
+                capacity=2 * self.num_preprocess_threads * self.batch_size)
+
+            images = tf.cast(images, tf.float32)
+            images = tf.reshape(images, shape=[self.batch_size, self.height, self.width, self.depth])
+
+            # Display the training images in the visualizer.
+            tf.image_summary('images', images)
+
+            return images, tf.reshape(label_index_batch, [self.batch_size])
+
+    def _batch_inputs_record(self, train):
+        """Construct batches of training or evaluation examples from the image dataset.
+
+        Args:
+          dataset: instance of Dataset class specifying the dataset.
+            See dataset.py for details.
+          batch_size: integer
+          train: boolean
+          num_preprocess_threads: integer, total number of preprocessing threads
+          num_readers: integer, number of parallel readers
+
+        Returns:
+          images: 4-D float Tensor of a batch of images
+          labels: 1-D integer Tensor of [batch_size].
+
+        Raises:
+          ValueError: if data is not found
         """
+        data_files = self.dataset.data_files()
+        if data_files is None:
+            raise ValueError('No data files found for this dataset')
 
-        # Force all input processing onto CPU in order to reserve the GPU for
-        # the forward inference and back-propagation.
-        with tf.device('/cpu:0'):
-            images, labels = self.batch_inputs(train=False)
+        # Create filename_queue
+        if train:
+            filename_queue = tf.train.string_input_producer(data_files,
+                                                            shuffle=True,
+                                                            capacity=16)
+        else:
+            filename_queue = tf.train.string_input_producer(data_files,
+                                                            shuffle=False,
+                                                            capacity=1)
 
-        return images, labels
+        # Approximate number of examples per shard.
+        examples_per_shard = 1024
+        # Size the random shuffle queue to balance between good global
+        # mixing (more examples) and memory use (fewer examples).
+        # 1 image uses 299*299*3*4 bytes = 1MB
+        # The default input_queue_memory_factor is 16 implying a shuffling queue
+        # size: examples_per_shard * 16 * 1MB = 17.6GB
+        min_queue_examples = examples_per_shard * FLAGS.input_queue_memory_factor
+        if train:
+            examples_queue = tf.RandomShuffleQueue(
+                capacity=min_queue_examples + 3 * self.batch_size,
+                min_after_dequeue=min_queue_examples,
+                dtypes=[tf.string])
+        else:
+            examples_queue = tf.FIFOQueue(
+                capacity=examples_per_shard + 3 * self.batch_size,
+                dtypes=[tf.string])
 
-    def distorted_inputs(self):
-        """Generate batches of distorted images for training.
+        # Create multiple readers to populate the queue of examples.
+        if self.num_readers > 1:
+            enqueue_ops = []
+            for _ in range(self.num_readers):
+                reader = self.dataset.reader()
+                _, value = reader.read(filename_queue)
+                enqueue_ops.append(examples_queue.enqueue([value]))
 
-        See batch_inputs
+            tf.train.queue_runner.add_queue_runner(
+                tf.train.queue_runner.QueueRunner(examples_queue, enqueue_ops))
+            example_serialized = examples_queue.dequeue()
+        else:
+            reader = self.dataset.reader()
+            _, example_serialized = reader.read(filename_queue)
+
+        images_and_labels = []
+        for thread_id in range(self.num_preprocess_threads):
+            # Parse a serialized Example proto to extract the image and metadata.
+            image_buffer, label_index, bbox, _ = self.proto_parser(example_serialized)
+            image = self.image_preprocess(image_buffer, bbox, train, thread_id)
+            images_and_labels.append([image, label_index])
+
+        return images_and_labels
+
+
+    def _batch_inputs_whole_file(self, train):
+        """Construct batches of training or evaluation examples from the image dataset.
+
+        Args:
+          dataset: instance of Dataset class specifying the dataset.
+            See dataset.py for details.
+          batch_size: integer
+          train: boolean
+          num_preprocess_threads: integer, total number of preprocessing threads
+          num_readers: integer, number of parallel readers
+
+        Returns:
+          images: 4-D float Tensor of a batch of images
+          labels: 1-D integer Tensor of [batch_size].
+
+        Raises:
+          ValueError: if data is not found
         """
+        data_files = self.dataset.data_files()
+        if data_files is None:
+            raise ValueError('No data files found for this dataset')
 
-        # Force all input processing onto CPU in order to reserve the GPU for
-        # the forward inference and back-propagation.
-        with tf.device('/cpu:0'):
-            images, labels = self.batch_inputs(train=True)
-        return images, labels
+        data_labels = self.dataset.label_indices()
+        if data_labels is None:
+            raise ValueError('No data labels found for this dataset')
 
+        # Create filename_queue
+        #input_queue = tf.train.string_input_producer(
+        #    data_files,
+        #    shuffle=train,
+        #    capacity=self.dataset.num_examples_per_epoch())
+
+        filename_tensor = tf.convert_to_tensor(data_files, dtype=tf.string)
+        label_tensor = tf.convert_to_tensor(data_labels, dtype=tf.int32)
+
+        min_after_dequeue = 10000
+        capacity = min_after_dequeue + 3 * self.batch_size
+
+        input_queue = tf.train.slice_input_producer(
+            [filename_tensor, label_tensor],
+            num_epochs=256, #self.dataset.num_examples_per_epoch(),
+            shuffle=train,
+            capacity=capacity)
+
+        images_and_labels = []
+
+        #[xmin, ymin, xmax, ymax]
+        bbox = [0.0, 0.0, 1.0, 1.0]
+
+        for thread_id in range(self.num_preprocess_threads):
+            label = input_queue[1]
+            image_buffer = tf.read_file(input_queue[0])
+            decoded = self.image_preprocess(
+                image_buffer,
+                height=self.height, width=self.width,
+                bbox=bbox, train=train, thread_id=thread_id)
+            images_and_labels.append([decoded, label])
+
+        #blah = [read_image(input_queue) for _ in range(self.num_preprocess_threads)]
+
+        return images_and_labels
