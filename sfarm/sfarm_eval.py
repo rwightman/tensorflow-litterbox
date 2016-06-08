@@ -26,20 +26,20 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from inception import SfarmData
+from sfarm_data import StateFarmData
 from inception import inception_eval
 
 FLAGS = tf.app.flags.FLAGS
 
 
 def main(unused_argv=None):
-  dataset = ImagenetData(subset=FLAGS.subset)
-  assert dataset.data_files()
-  if tf.gfile.Exists(FLAGS.eval_dir):
-    tf.gfile.DeleteRecursively(FLAGS.eval_dir)
-  tf.gfile.MakeDirs(FLAGS.eval_dir)
-  inception_eval.evaluate(dataset)
+    dataset = StateFarmData(subset=FLAGS.subset)
+    assert dataset.data_files()
+    if tf.gfile.Exists(FLAGS.eval_dir):
+        tf.gfile.DeleteRecursively(FLAGS.eval_dir)
+    tf.gfile.MakeDirs(FLAGS.eval_dir)
+    inception_eval.evaluate(dataset)
 
 
 if __name__ == '__main__':
-  tf.app.run()
+    tf.app.run()

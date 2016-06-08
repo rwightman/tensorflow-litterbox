@@ -26,10 +26,12 @@ import numpy as np
 import os.path
 import re
 import tensorflow as tf
+from tensorflow.contrib import slim
 
 from inception.image_processing import *
 from inception.feed import Feed
-import inception.slim.inception_model as inception
+import inception.inception_model as inception
+
 
 FLAGS = tf.app.flags.FLAGS
 

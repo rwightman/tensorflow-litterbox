@@ -26,7 +26,7 @@ from __future__ import print_function
 
 import os
 import tensorflow as tf
-import pandas as pd
+#import pandas as pd
 from abc import ABCMeta
 from abc import abstractmethod
 
@@ -57,7 +57,6 @@ class DatasetFile(Dataset):
         super(DatasetFile, self).__init__(name, subset, record=False)
         self.labels = {}
         self.num_examples = 0
-        self.data = pd.DataFrame()
 
     def num_classes(self):
         """Returns the number of classes in the data set."""

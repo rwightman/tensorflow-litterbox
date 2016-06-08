@@ -130,9 +130,9 @@ def _convert_to_example(filename, image_buffer, label, text, height, width):
     Example proto
   """
 
-  colorspace = 'RGB'
+  colorspace = b'RGB'
   channels = 3
-  image_format = 'JPEG'
+  image_format = b'JPEG'
 
   example = tf.train.Example(features=tf.train.Features(feature={
       'image/height': _int64_feature(height),
@@ -140,9 +140,9 @@ def _convert_to_example(filename, image_buffer, label, text, height, width):
       'image/colorspace': _bytes_feature(colorspace),
       'image/channels': _int64_feature(channels),
       'image/class/label': _int64_feature(label),
-      'image/class/text': _bytes_feature(text),
+      'image/class/text': _bytes_feature(text.encode()),
       'image/format': _bytes_feature(image_format),
-      'image/filename': _bytes_feature(os.path.basename(filename)),
+      'image/filename': _bytes_feature(os.path.basename(filename).encode()),
       'image/encoded': _bytes_feature(image_buffer)}))
   return example
 
@@ -199,7 +199,7 @@ def _process_image(filename, coder):
     width: integer, image width in pixels.
   """
   # Read the image file.
-  image_data = tf.gfile.FastGFile(filename, 'r').read()
+  image_data = tf.gfile.FastGFile(filename, 'rb').read()
 
   # Convert any PNG to JPEG's for consistency.
   if _is_png(filename):
@@ -246,7 +246,7 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
   num_files_in_thread = ranges[thread_index][1] - ranges[thread_index][0]
 
   counter = 0
-  for s in xrange(num_shards_per_batch):
+  for s in range(num_shards_per_batch):
     # Generate a sharded version of the file name, e.g. 'train-00002-of-00010'
     shard = thread_index * num_shards_per_batch + s
     output_filename = '%s-%.5d-of-%.5d' % (name, shard, num_shards)
@@ -299,7 +299,7 @@ def _process_image_files(name, filenames, texts, labels, num_shards):
   spacing = np.linspace(0, len(filenames), FLAGS.num_threads + 1).astype(np.int)
   ranges = []
   threads = []
-  for i in xrange(len(spacing) - 1):
+  for i in range(len(spacing) - 1):
     ranges.append([spacing[i], spacing[i+1]])
 
   # Launch a thread for each batch.
@@ -313,7 +313,7 @@ def _process_image_files(name, filenames, texts, labels, num_shards):
   coder = ImageCoder()
 
   threads = []
-  for thread_index in xrange(len(ranges)):
+  for thread_index in range(len(ranges)):
     args = (coder, thread_index, ranges, name, filenames,
             texts, labels, num_shards)
     t = threading.Thread(target=_process_image_files_batch, args=args)
@@ -371,6 +371,7 @@ def _find_image_files(data_dir, labels_file):
   # Construct the list of JPEG files and labels.
   for text in unique_labels:
     jpeg_file_path = '%s/%s/*' % (data_dir, text)
+    print(jpeg_file_path)
     matching_files = tf.gfile.Glob(jpeg_file_path)
 
     labels.extend([label_index] * len(matching_files))
@@ -385,7 +386,7 @@ def _find_image_files(data_dir, labels_file):
   # Shuffle the ordering of all image files in order to guarantee
   # random ordering of the images with respect to label in the
   # saved TFRecord files. Make the randomization repeatable.
-  shuffled_index = range(len(filenames))
+  shuffled_index = list(range(len(filenames)))
   random.seed(12345)
   random.shuffle(shuffled_index)
 

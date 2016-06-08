@@ -100,7 +100,7 @@ def distort_color(image, thread_id=0, scope=None):
         return image
 
 
-def distort_image(image, height, width, bbox, thread_id=0, scope=None):
+def distort_image(image, height, width, bbox=[], flip=False, thread_id=0, scope=None):
     """Distort one image for training a network.
 
     Distorting images provides a useful technique for augmenting the data
@@ -140,7 +140,7 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
             bounding_boxes=bbox,
             min_object_covered=0.1,
             aspect_ratio_range=[0.75, 1.33],
-            area_range=[0.05, 1.0],
+            area_range=[0.25, 1.0],
             max_attempts=100,
             use_image_if_no_bounding_boxes=True)
         bbox_begin, bbox_size, distort_bbox = sample_distorted_bounding_box
@@ -164,13 +164,15 @@ def distort_image(image, height, width, bbox, thread_id=0, scope=None):
             tf.image_summary('cropped_resized_image', tf.expand_dims(distorted_image, 0))
 
         # Randomly flip the image horizontally.
-        distorted_image = tf.image.random_flip_left_right(distorted_image)
+        if flip:
+            distorted_image = tf.image.random_flip_left_right(distorted_image)
 
         # Randomly distort the colors.
         distorted_image = distort_color(distorted_image, thread_id)
 
         if not thread_id:
             tf.image_summary('final_distorted_image', tf.expand_dims(distorted_image, 0))
+
         return distorted_image
 
 
@@ -197,7 +199,7 @@ def eval_image(image, height, width, scope=None):
         return image
 
 
-def image_preprocessing(image_buffer, height, width, bbox, train=False, thread_id=0):
+def image_preprocessing(image_buffer, height, width, bbox=[], train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -214,13 +216,13 @@ def image_preprocessing(image_buffer, height, width, bbox, train=False, thread_i
     Raises:
       ValueError: if user does not provide bounding box
     """
-    if bbox is None:
-        raise ValueError('Please supply a bounding box.')
+    if not height or not width:
+        raise ValueError('Please specify target image height & width.')
 
     image = decode_jpeg(image_buffer)
 
     if train:
-        image = distort_image(image, height, width, bbox, thread_id)
+        image = distort_image(image, height=height, width=width, bbox=bbox, thread_id=thread_id)
     else:
         image = eval_image(image, height, width)
 

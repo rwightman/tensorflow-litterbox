@@ -5,9 +5,11 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+from inception.parse_proto_imagenet import parse_imagenet_proto
+
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer('batch_size', 32,
+tf.app.flags.DEFINE_integer('batch_size', 16,
                             """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('image_size', 299,
                             """Provide square images of this size.""")
@@ -47,6 +49,8 @@ class Feed(object):
         if not image_preprocess:
             raise ValueError('Please provide an image preprocessor')
 
+        self.proto_parser = parse_imagenet_proto
+
         self.batch_size = FLAGS.batch_size if not batch_size else batch_size
 
         self.num_preprocess_threads = FLAGS.num_preprocess_threads \
@@ -68,6 +72,9 @@ class Feed(object):
 
     def num_batches_per_epoch(self):
         return self.dataset.num_examples_per_epoch() / self.batch_size
+
+    def num_examples_per_epoch(self):
+        return self.dataset.num_examples_per_epoch()
 
     def inputs(self):
         """Generate batches of images for evaluation.
@@ -110,8 +117,8 @@ class Feed(object):
         """
         with tf.name_scope('batch_processing'):
 
-            images_and_labels = self._bath_inputs_record(train) if self.dataset.record \
-                else self._batch_inputs_whole_file(train)
+            images_and_labels = self._batch_inputs_record(train) if self.dataset.record \
+                else self._batch_inputs_file(train)
 
             images, label_index_batch = tf.train.batch_join(
                 images_and_labels,
@@ -195,13 +202,13 @@ class Feed(object):
         for thread_id in range(self.num_preprocess_threads):
             # Parse a serialized Example proto to extract the image and metadata.
             image_buffer, label_index, bbox, _ = self.proto_parser(example_serialized)
-            image = self.image_preprocess(image_buffer, bbox, train, thread_id)
+            image = self.image_preprocess(image_buffer, self.height, self.width, bbox, train, thread_id)
             images_and_labels.append([image, label_index])
 
         return images_and_labels
 
 
-    def _batch_inputs_whole_file(self, train):
+    def _batch_inputs_file(self, train):
         """Construct batches of training or evaluation examples from the image dataset.
 
         Args:
@@ -247,16 +254,13 @@ class Feed(object):
 
         images_and_labels = []
 
-        #[xmin, ymin, xmax, ymax]
-        bbox = [0.0, 0.0, 1.0, 1.0]
-
         for thread_id in range(self.num_preprocess_threads):
             label = input_queue[1]
             image_buffer = tf.read_file(input_queue[0])
             decoded = self.image_preprocess(
                 image_buffer,
                 height=self.height, width=self.width,
-                bbox=bbox, train=train, thread_id=thread_id)
+                train=train, thread_id=thread_id)
             images_and_labels.append([decoded, label])
 
         #blah = [read_image(input_queue) for _ in range(self.num_preprocess_threads)]
