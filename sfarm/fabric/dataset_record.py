@@ -29,8 +29,9 @@ import tensorflow as tf
 from abc import ABCMeta
 from abc import abstractmethod
 
-from inception.dataset import Dataset
-from inception.dataset import FLAGS
+from .dataset import Dataset
+from .dataset import FLAGS
+
 
 class DatasetRecord(Dataset):
   """A simple class for handling data sets."""

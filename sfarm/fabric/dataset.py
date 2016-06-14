@@ -24,47 +24,45 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import os
-import tensorflow as tf
-#import pandas as pd
 from abc import ABCMeta
 from abc import abstractmethod
+import os
 
-from .dataset import Dataset
+import tensorflow as tf
 
 FLAGS = tf.app.flags.FLAGS
 
+# Basic model parameters.
+tf.app.flags.DEFINE_string('data_dir', '/tmp/mydata', """Path to the data.""")
 
-def get_image_paths(folder):
-    file_list = []
-    dir_list = []
-    for root, subdirs, files in os.walk(folder, topdown=False):
-        rel_path = os.path.relpath(root, folder)
-        jpeg_files = [os.path.join(rel_path, f) for f in files if os.path.splitext(f)[1].lower() in ('.jpg', '.jpeg')]
-        if rel_path and (jpeg_files or subdirs):
-            dir_list.append(rel_path)
-        if jpeg_files:
-            file_list.append(jpeg_files)
-    return file_list, dir_list[::-1]
+tf.app.flags.DEFINE_string('subset', 'validation',
+                           """Either 'validation' or 'train'.""")
 
+class Dataset(object):
+    """A simple class for handling data sets."""
+    __metaclass__ = ABCMeta
 
-class DatasetFile(Dataset):
-    """A simple class for handling file (non-record) data sets."""
-    metaclass__ = ABCMeta
-
-    def __init__(self, name, subset):
+    def __init__(self, name='Unknown', subset='Unknown', record=False):
         """Initialize dataset using a subset and the path to the data."""
-        super(DatasetFile, self).__init__(name, subset, record=False)
-        self.labels = {}
-        self.num_examples = 0
+        assert subset in self.available_subsets(), self.available_subsets()
+        self.name = name
+        self.subset = subset
+        self.record = record
 
+    @abstractmethod
     def num_classes(self):
         """Returns the number of classes in the data set."""
-        return len(self.labels)
+        pass
+        # return 10
 
+    @abstractmethod
     def num_examples_per_epoch(self):
         """Returns the number of examples in the data subset."""
-        return self.num_examples
+        pass
+        # if self.subset == 'train':
+        #   return 10000
+        # if self.subset == 'validation':
+        #   return 1000
 
     @abstractmethod
     def download_message(self):
@@ -73,29 +71,20 @@ class DatasetFile(Dataset):
 
     def available_subsets(self):
         """Returns the list of available subsets."""
-        return ['train', 'val']
+        return ['train', 'validation']
 
+    @abstractmethod
     def data_files(self):
-        """Returns a python list of all data files.
+        """Returns a python list of all (sharded) data subset files.
 
         Returns:
-          python list of all data set files.
+          python list of all (sharded) data set files.
         Raises:
-          ValueError: if there are no data files matching the subset.
+          ValueError: if there are not data_files matching the subset.
         """
+        pass
 
-        return ['']
-
-    def label_names(self):
-        """Return label names for list of files"""
-        return ['']
-
-
-    def label_indices(self):
-        """Return label indices for list of files"""
-        return [0]
-
-
+    @abstractmethod
     def reader(self):
         """Return a reader for a single entry from the data set.
 
@@ -104,4 +93,4 @@ class DatasetFile(Dataset):
         Returns:
           Reader object that reads the data set.
         """
-        return tf.WholeFileReader()
+        pass

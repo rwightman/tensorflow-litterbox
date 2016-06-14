@@ -5,7 +5,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from inception.parse_proto_imagenet import parse_imagenet_proto
+from .parse_proto_imagenet import parse_imagenet_proto
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -78,28 +78,25 @@ class Feed(object):
 
     def inputs(self):
         """Generate batches of images for evaluation.
-
         See _batch_inputs.
         """
-
         # Force all input processing onto CPU in order to reserve the GPU for
         # the forward inference and back-propagation.
         with tf.device('/cpu:0'):
-            images, labels = self._batch_inputs(train=False)
+            images, labels, filenames = self._batch_inputs(train=False)
 
-        return images, labels
+        return images, labels, filenames
 
     def distorted_inputs(self):
         """Generate batches of distorted images for training.
-
         See _batch_inputs
         """
-
         # Force all input processing onto CPU in order to reserve the GPU for
         # the forward inference and back-propagation.
         with tf.device('/cpu:0'):
-            images, labels = self._batch_inputs(train=True)
-        return images, labels
+            images, labels, filenames = self._batch_inputs(train=True)
+
+        return images, labels, filenames
 
     def _batch_inputs(self, train=False):
         """Construct batches of training or evaluation examples from the image dataset.
@@ -117,11 +114,11 @@ class Feed(object):
         """
         with tf.name_scope('batch_processing'):
 
-            images_and_labels = self._batch_inputs_record(train) if self.dataset.record \
+            inputs = self._batch_inputs_record(train) if self.dataset.record \
                 else self._batch_inputs_file(train)
 
-            images, label_index_batch = tf.train.batch_join(
-                images_and_labels,
+            images, label_index_batch, filename_batch = tf.train.batch_join(
+                inputs,
                 batch_size=self.batch_size,
                 capacity=2 * self.num_preprocess_threads * self.batch_size)
 
@@ -131,7 +128,9 @@ class Feed(object):
             # Display the training images in the visualizer.
             tf.image_summary('images', images)
 
-            return images, tf.reshape(label_index_batch, [self.batch_size])
+            return images, \
+                   tf.reshape(label_index_batch, [self.batch_size]), \
+                   tf.reshape(filename_batch, [self.batch_size])
 
     def _batch_inputs_record(self, train):
         """Construct batches of training or evaluation examples from the image dataset.
@@ -191,21 +190,20 @@ class Feed(object):
                 _, value = reader.read(filename_queue)
                 enqueue_ops.append(examples_queue.enqueue([value]))
 
-            tf.train.queue_runner.add_queue_runner(
-                tf.train.queue_runner.QueueRunner(examples_queue, enqueue_ops))
+            tf.train.queue_runner.add_queue_runner(tf.train.queue_runner.QueueRunner(examples_queue, enqueue_ops))
             example_serialized = examples_queue.dequeue()
         else:
             reader = self.dataset.reader()
             _, example_serialized = reader.read(filename_queue)
 
-        images_and_labels = []
+        inputs = []
         for thread_id in range(self.num_preprocess_threads):
             # Parse a serialized Example proto to extract the image and metadata.
-            image_buffer, label_index, bbox, _ = self.proto_parser(example_serialized)
+            image_buffer, label_index, bbox, _, filename = self.proto_parser(example_serialized)
             image = self.image_preprocess(image_buffer, self.height, self.width, bbox, train, thread_id)
-            images_and_labels.append([image, label_index])
+            inputs.append([image, label_index, filename])
 
-        return images_and_labels
+        return inputs
 
 
     def _batch_inputs_file(self, train):
@@ -234,35 +232,26 @@ class Feed(object):
         if data_labels is None:
             raise ValueError('No data labels found for this dataset')
 
-        # Create filename_queue
-        #input_queue = tf.train.string_input_producer(
-        #    data_files,
-        #    shuffle=train,
-        #    capacity=self.dataset.num_examples_per_epoch())
-
         filename_tensor = tf.convert_to_tensor(data_files, dtype=tf.string)
         label_tensor = tf.convert_to_tensor(data_labels, dtype=tf.int32)
 
         min_after_dequeue = 10000
         capacity = min_after_dequeue + 3 * self.batch_size
-
         input_queue = tf.train.slice_input_producer(
             [filename_tensor, label_tensor],
-            num_epochs=256, #self.dataset.num_examples_per_epoch(),
+            num_epochs=self.dataset.num_examples_per_epoch(),
             shuffle=train,
             capacity=capacity)
 
-        images_and_labels = []
-
+        inputs = []
         for thread_id in range(self.num_preprocess_threads):
-            label = input_queue[1]
-            image_buffer = tf.read_file(input_queue[0])
-            decoded = self.image_preprocess(
+            filename = input_queue[0]
+            label_index = input_queue[1]
+            image_buffer = tf.read_file(filename)
+            image = self.image_preprocess(
                 image_buffer,
                 height=self.height, width=self.width,
                 train=train, thread_id=thread_id)
-            images_and_labels.append([decoded, label])
+            inputs.append([image, label_index, filename])
 
-        #blah = [read_image(input_queue) for _ in range(self.num_preprocess_threads)]
-
-        return images_and_labels
+        return inputs

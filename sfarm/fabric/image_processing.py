@@ -199,7 +199,7 @@ def eval_image(image, height, width, scope=None):
         return image
 
 
-def image_preprocessing(image_buffer, height, width, bbox=[], train=False, thread_id=0):
+def image_preprocess(image_buffer, height, width, bbox=[], train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:

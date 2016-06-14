@@ -28,10 +28,8 @@ import re
 import tensorflow as tf
 from tensorflow.contrib import slim
 
-from inception.image_processing import *
-from inception.feed import Feed
-import inception.inception_model as inception
-
+from .image_processing import *
+from .feed import Feed
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -40,8 +38,6 @@ tf.app.flags.DEFINE_string('train_dir', '/tmp/imagenet_train',
                            """and checkpoint.""")
 tf.app.flags.DEFINE_integer('max_steps', 10000000,
                             """Number of batches to run.""")
-tf.app.flags.DEFINE_string('subset', 'train',
-                           """Either 'train' or 'validation'.""")
 
 # Flags governing the hardware employed for running TensorFlow.
 tf.app.flags.DEFINE_integer('num_gpus', 1,
@@ -70,8 +66,10 @@ tf.app.flags.DEFINE_string('pretrained_model_checkpoint_path', '',
 # Learning rate decay factor selected from http://arxiv.org/abs/1404.5997.
 tf.app.flags.DEFINE_float('initial_learning_rate', 0.1,
                           """Initial learning rate.""")
+
 tf.app.flags.DEFINE_float('num_epochs_per_decay', 30.0,
                           """Epochs after which learning rate decays.""")
+
 tf.app.flags.DEFINE_float('learning_rate_decay_factor', 0.16,
                           """Learning rate decay factor.""")
 
@@ -81,7 +79,7 @@ RMSPROP_MOMENTUM = 0.9  # Momentum in RMSProp.
 RMSPROP_EPSILON = 1.0  # Epsilon term for RMSProp.
 
 
-def _tower_loss(images, labels, num_classes, scope):
+def _tower_loss(images, labels, num_classes, model, scope):
     """Calculate the total loss on a single tower running the ImageNet model.
 
     We perform 'batch splitting'. This means that we cut up a batch across
@@ -105,14 +103,13 @@ def _tower_loss(images, labels, num_classes, scope):
     restore_logits = not FLAGS.fine_tune
 
     # Build inference Graph.
-    logits = inception.inference(images, num_classes, for_training=True,
-                                 restore_logits=restore_logits,
-                                 scope=scope)
+    logits = model.build(
+        images, num_classes, for_training=True, restore_logits=restore_logits, scope=scope)
 
     # Build the portion of the Graph calculating the losses. Note that we will
     # assemble the total_loss using a custom function below.
     split_batch_size = images.get_shape().as_list()[0]
-    inception.loss(logits, labels, batch_size=split_batch_size)
+    model.loss(logits, labels, batch_size=split_batch_size)
 
     # Assemble all of the losses for the current tower only.
     losses = tf.get_collection(slim.losses.LOSSES_COLLECTION, scope)
@@ -125,12 +122,12 @@ def _tower_loss(images, labels, num_classes, scope):
     loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
     loss_averages_op = loss_averages.apply(losses + [total_loss])
 
-    # Attach a scalar summmary to all individual losses and the total loss; do the
-    # same for the averaged version of the losses.
+    # Attach a scalar summary to all individual losses and the total loss;
+    # do the same for the averaged version of the losses.
     for l in losses + [total_loss]:
         # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
         # session. This helps the clarity of presentation on TensorBoard.
-        loss_name = re.sub('%s_[0-9]*/' % inception.TOWER_NAME, '', l.op.name)
+        loss_name = re.sub('%s_[0-9]*/' % model.TOWER_NAME, '', l.op.name)
         # Name each loss as '(raw)' and name the moving average version of the loss
         # as the original loss name.
         tf.scalar_summary(loss_name + ' (raw)', l)
@@ -138,6 +135,7 @@ def _tower_loss(images, labels, num_classes, scope):
 
     with tf.control_dependencies([loss_averages_op]):
         total_loss = tf.identity(total_loss)
+
     return total_loss
 
 
@@ -179,16 +177,17 @@ def _average_gradients(tower_grads):
     return average_grads
 
 
-def train(dataset):
+def train(dataset, model):
+
     """Train on dataset for a number of steps."""
     with tf.Graph().as_default(), tf.device('/cpu:0'):
         # Override the number of preprocessing threads to account for the increased
         # number of GPU towers.
         num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus
-        feed = Feed(dataset,
-                    image_preprocessing,
-                    batch_size=FLAGS.batch_size,
-                    num_preprocess_threads=num_preprocess_threads)
+        feed = Feed(
+            dataset, image_preprocess,
+            batch_size=FLAGS.batch_size,
+            num_preprocess_threads=num_preprocess_threads)
 
         # Create a variable to count the number of train() calls. This equals the
         # number of batches processed * FLAGS.num_gpus.
@@ -217,7 +216,7 @@ def train(dataset):
             'Batch size must be divisible by number of GPUs')
         split_batch_size = int(FLAGS.batch_size / FLAGS.num_gpus)
 
-        images, labels = feed.distorted_inputs()
+        images, labels, _ = feed.distorted_inputs()
 
         input_summaries = copy.copy(tf.get_collection(tf.GraphKeys.SUMMARIES))
 
@@ -225,26 +224,21 @@ def train(dataset):
         # Label 0 is reserved for an (unused) background class.
         num_classes = dataset.num_classes() + 1
 
+        # Split the batch of images and labels for towers.
+        images_splits = tf.split(0, FLAGS.num_gpus, images)
+        labels_splits = tf.split(0, FLAGS.num_gpus, labels)
+
         # Calculate the gradients for each model tower.
         tower_grads = []
         for i in range(FLAGS.num_gpus):
             with tf.device('/gpu:%d' % i):
-                with tf.name_scope('%s_%d' % (inception.TOWER_NAME, i)) as scope:
-                    # Split the batch of images and labels.
-                    batch_start = split_batch_size * i
-                    images_batch = tf.slice(images,
-                                            begin=[batch_start, 0, 0, 0],
-                                            size=[split_batch_size, -1, -1, -1])
-                    labels_batch = tf.slice(labels,
-                                            begin=[batch_start],
-                                            size=[split_batch_size])
-
+                with tf.name_scope('%s_%d' % (model.TOWER_NAME, i)) as scope:
                     # Force all Variables to reside on the CPU.
                     with slim.arg_scope([slim.variables.variable], device='/cpu:0'):
                         # Calculate the loss for one tower of the ImageNet model. This
                         # function constructs the entire ImageNet model but shares the
                         # variables across all towers.
-                        loss = _tower_loss(images_batch, labels_batch, num_classes, scope)
+                        loss = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
 
                     # Reuse variables for the next tower.
                     tf.get_variable_scope().reuse_variables()
@@ -256,7 +250,7 @@ def train(dataset):
                     # final tower. Ideally, we should grab the updates from all towers
                     # but these stats accumulate extremely fast so we can ignore the
                     # other stats from the other towers without significant detriment.
-                    batchnorm_updates = tf.get_collection(slim.ops.UPDATE_OPS_COLLECTION, scope)
+                    batch_norm_updates = tf.get_collection(slim.ops.UPDATE_OPS_COLLECTION, scope)
 
                     # Calculate the gradients for the batch of data on this ImageNet
                     # tower.
@@ -291,17 +285,15 @@ def train(dataset):
         # Note that we maintain a "double-average" of the BatchNormalization
         # global statistics. This is more complicated then need be but we employ
         # this for backward-compatibility with our previous models.
-        variable_averages = tf.train.ExponentialMovingAverage(
-            inception.MOVING_AVERAGE_DECAY, global_step)
+        variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY, global_step)
 
-        # Another possiblility is to use tf.slim.get_variables().
-        variables_to_average = (tf.trainable_variables() +
-                                tf.moving_average_variables())
+        # Another possibility is to use tf.slim.get_variables().
+        variables_to_average = (tf.trainable_variables() + tf.moving_average_variables())
         variables_averages_op = variable_averages.apply(variables_to_average)
 
         # Group all updates to into a single train op.
-        batchnorm_updates_op = tf.group(*batchnorm_updates)
-        train_op = tf.group(apply_gradient_op, variables_averages_op, batchnorm_updates_op)
+        batch_norm_updates_op = tf.group(*batch_norm_updates)
+        train_op = tf.group(apply_gradient_op, variables_averages_op, batch_norm_updates_op)
 
         # Create a saver.
         saver = tf.train.Saver(tf.all_variables())

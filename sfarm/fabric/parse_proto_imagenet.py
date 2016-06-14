@@ -45,6 +45,7 @@ def parse_imagenet_proto(example_serialized):
         'image/encoded': tf.FixedLenFeature([], dtype=tf.string, default_value=''),
         'image/class/label': tf.FixedLenFeature([1], dtype=tf.int64, default_value=-1),
         'image/class/text': tf.FixedLenFeature([], dtype=tf.string, default_value=''),
+        'image/filename': tf.FixedLenFeature([], dtype=tf.string, default_value=''),
     }
     sparse_float32 = tf.VarLenFeature(dtype=tf.float32)
     # Sparse features in Example proto.
@@ -70,4 +71,4 @@ def parse_imagenet_proto(example_serialized):
     bbox = tf.expand_dims(bbox, 0)
     bbox = tf.transpose(bbox, [0, 2, 1])
 
-    return features['image/encoded'], label, bbox, features['image/class/text']
+    return features['image/encoded'], label, bbox, features['image/class/text'], features['image/filename']
