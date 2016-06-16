@@ -44,7 +44,7 @@ def get_image_files_and_labels(folder, types=('.jpg', '.jpeg')):
         for f in files:
             if os.path.splitext(f)[1].lower() in types:
                 label_counts.update([label])
-                filenames.append(f)
+                filenames.append(os.path.join(root,f))
                 labels.append(label)
     return label_counts, labels, filenames
 

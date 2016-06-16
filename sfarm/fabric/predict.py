@@ -112,6 +112,7 @@ def predict(dataset, model):
         # Restore the moving average version of the learned variables for eval.
         variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY)
         variables_to_restore = variable_averages.variables_to_restore()
+
         saver = tf.train.Saver(variables_to_restore)
 
         _predict(feed, saver, softmax_output, filenames)

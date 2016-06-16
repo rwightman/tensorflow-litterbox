@@ -235,11 +235,11 @@ class Feed(object):
         filename_tensor = tf.convert_to_tensor(data_files, dtype=tf.string)
         label_tensor = tf.convert_to_tensor(data_labels, dtype=tf.int32)
 
-        min_after_dequeue = 10000
+        min_after_dequeue = 1000
         capacity = min_after_dequeue + 3 * self.batch_size
         input_queue = tf.train.slice_input_producer(
             [filename_tensor, label_tensor],
-            num_epochs=self.dataset.num_examples_per_epoch(),
+            #num_epochs=self.dataset.num_examples_per_epoch(),
             shuffle=train,
             capacity=capacity)
 
