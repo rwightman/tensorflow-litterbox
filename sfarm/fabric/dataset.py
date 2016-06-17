@@ -35,8 +35,6 @@ FLAGS = tf.app.flags.FLAGS
 # Basic model parameters.
 tf.app.flags.DEFINE_string('data_dir', '/tmp/mydata', """Path to the data.""")
 
-tf.app.flags.DEFINE_string('subset', 'validation',
-                           """Either 'validation' or 'train'.""")
 
 class Dataset(object):
     """A simple class for handling data sets."""

@@ -49,6 +49,8 @@ tf.app.flags.DEFINE_integer('num_examples', 0,
                             """Number of examples to run. Note that the eval """
                             """ImageNet dataset contains 50000 examples.""")
 
+tf.app.flags.DEFINE_string('subset', 'validation',
+                           """Either 'validation' or 'train'.""")
 
 def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary_op):
     """Runs Eval once.

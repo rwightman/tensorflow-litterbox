@@ -73,6 +73,9 @@ tf.app.flags.DEFINE_float('num_epochs_per_decay', 30.0,
 tf.app.flags.DEFINE_float('learning_rate_decay_factor', 0.16,
                           """Learning rate decay factor.""")
 
+tf.app.flags.DEFINE_string('subset', 'train',
+                           """Either 'validation' or 'train'.""")
+
 # Constants dictating the learning rate schedule.
 RMSPROP_DECAY = 0.9  # Decay term for RMSProp.
 RMSPROP_MOMENTUM = 0.9  # Momentum in RMSProp.
@@ -103,13 +106,12 @@ def _tower_loss(images, labels, num_classes, model, scope):
     restore_logits = not FLAGS.fine_tune
 
     # Build inference Graph.
-    logits = model.build(
-        images, num_classes, for_training=True, restore_logits=restore_logits, scope=scope)
+    model.build(images, num_classes, for_training=True, restore_logits=restore_logits, scope=scope)
 
     # Build the portion of the Graph calculating the losses. Note that we will
     # assemble the total_loss using a custom function below.
     split_batch_size = images.get_shape().as_list()[0]
-    model.loss(logits, labels, batch_size=split_batch_size)
+    model.loss(labels, batch_size=split_batch_size)
 
     # Assemble all of the losses for the current tower only.
     losses = tf.get_collection(slim.losses.LOSSES_COLLECTION, scope)
@@ -210,6 +212,8 @@ def train(dataset, model):
         opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
                                         momentum=RMSPROP_MOMENTUM,
                                         epsilon=RMSPROP_EPSILON)
+
+        #opt = tf.train.AdamOptimizer(lr)
 
         # Get images and labels for ImageNet and split the batch across GPUs.
         assert FLAGS.batch_size % FLAGS.num_gpus == 0, (

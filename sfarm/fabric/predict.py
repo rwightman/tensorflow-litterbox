@@ -29,6 +29,9 @@ tf.app.flags.DEFINE_integer('num_examples', 0,
                             """Number of examples to run. Note that the eval """
                             """ImageNet dataset contains 50000 examples.""")
 
+tf.app.flags.DEFINE_string('subset', 'test',
+                           """Either 'validation', 'train', 'test'""")
+
 def _predict(feed, saver, softmax_op, filenames_op):
     """Runs prediction
     """

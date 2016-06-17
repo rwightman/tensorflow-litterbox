@@ -8,11 +8,10 @@ from __future__ import print_function
 import tensorflow as tf
 
 from sfarm_data import StateFarmData
-from inception.train import train
+from fabric.train import train
 from inception import ModelInceptionV3
 
 FLAGS = tf.app.flags.FLAGS
-
 
 def main(_):
     dataset = StateFarmData(subset=FLAGS.subset)

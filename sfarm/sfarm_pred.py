@@ -10,7 +10,7 @@ import tensorflow as tf
 
 from sfarm_data import StateFarmData
 from fabric import DatasetFile
-from fabric import predict
+from fabric.predict import predict
 from inception import ModelInceptionV3
 
 FLAGS = tf.app.flags.FLAGS

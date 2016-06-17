@@ -9,7 +9,7 @@ from __future__ import print_function
 import tensorflow as tf
 
 from sfarm_data import StateFarmData
-from fabric import evaluate
+from fabric.eval import evaluate
 from inception import ModelInceptionV3
 
 FLAGS = tf.app.flags.FLAGS
