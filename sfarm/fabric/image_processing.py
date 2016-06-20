@@ -100,7 +100,7 @@ def distort_color(image, thread_id=0, scope=None):
         return image
 
 
-def distort_image(image, height, width, bbox=[], flip=False, thread_id=0, scope=None):
+def distort_image(image, height, width, bbox=None, flip=False, thread_id=0, scope=None):
     """Distort one image for training a network.
 
     Distorting images provides a useful technique for augmenting the data
@@ -199,7 +199,7 @@ def eval_image(image, height, width, scope=None):
         return image
 
 
-def image_preprocess(image_buffer, height, width, bbox=[], train=False, thread_id=0):
+def image_preprocess(image_buffer, height, width, bbox=None, train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -222,6 +222,8 @@ def image_preprocess(image_buffer, height, width, bbox=[], train=False, thread_i
     image = decode_jpeg(image_buffer)
 
     if train:
+        if not bbox:
+            bbox = tf.zeros([1, 1, 4], "float")
         image = distort_image(image, height=height, width=width, bbox=bbox, thread_id=thread_id)
     else:
         image = eval_image(image, height, width)
