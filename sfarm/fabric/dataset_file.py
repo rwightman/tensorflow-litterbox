@@ -58,7 +58,6 @@ class DatasetFile(Dataset):
         self.file_folder = os.path.join(FLAGS.data_dir, subset)
         self.label_counts, self.image_label_names, self.image_filenames = \
             get_image_files_and_labels(self.file_folder)
-        print(self.file_folder, self.label_counts)
         self.num_examples = sum(self.label_counts.values())
 
         #generate label mappings, this could also be passed in if defined externally?
@@ -66,7 +65,6 @@ class DatasetFile(Dataset):
         self.label_name_to_index = {v: k for (k, v) in enumerate(self.label_names)}
 
         self.image_label_indices = [self.label_name_to_index[x] for x in self.image_label_names]
-        print(self.image_label_indices)
 
 
     def num_examples_per_epoch(self):

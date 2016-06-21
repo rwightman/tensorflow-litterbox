@@ -26,7 +26,7 @@ import numpy as np
 import os.path
 import re
 import tensorflow as tf
-from tensorflow.contrib import slim
+from slim import *
 
 from .image_processing import *
 from .feed import Feed
@@ -114,19 +114,19 @@ def _tower_loss(images, labels, num_classes, model, scope):
     model.loss(labels, batch_size=split_batch_size)
 
     # Assemble all of the losses for the current tower only.
-    losses = tf.get_collection(slim.losses.LOSSES_COLLECTION, scope)
+    tower_losses = tf.get_collection(losses.LOSSES_COLLECTION, scope)
 
     # Calculate the total loss for the current tower.
     regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
-    total_loss = tf.add_n(losses + regularization_losses, name='total_loss')
+    total_loss = tf.add_n(tower_losses + regularization_losses, name='total_loss')
 
     # Compute the moving average of all individual losses and the total loss.
     loss_averages = tf.train.ExponentialMovingAverage(0.9, name='avg')
-    loss_averages_op = loss_averages.apply(losses + [total_loss])
+    loss_averages_op = loss_averages.apply(tower_losses + [total_loss])
 
     # Attach a scalar summary to all individual losses and the total loss;
     # do the same for the averaged version of the losses.
-    for l in losses + [total_loss]:
+    for l in tower_losses + [total_loss]:
         # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
         # session. This helps the clarity of presentation on TensorBoard.
         loss_name = re.sub('%s_[0-9]*/' % model.TOWER_NAME, '', l.op.name)
@@ -238,7 +238,7 @@ def train(dataset, model):
             with tf.device('/gpu:%d' % i):
                 with tf.name_scope('%s_%d' % (model.TOWER_NAME, i)) as scope:
                     # Force all Variables to reside on the CPU.
-                    with slim.arg_scope([slim.variables.variable], device='/cpu:0'):
+                    with arg_scope([variables.variable], device='/cpu:0'):
                         # Calculate the loss for one tower of the ImageNet model. This
                         # function constructs the entire ImageNet model but shares the
                         # variables across all towers.
@@ -254,7 +254,7 @@ def train(dataset, model):
                     # final tower. Ideally, we should grab the updates from all towers
                     # but these stats accumulate extremely fast so we can ignore the
                     # other stats from the other towers without significant detriment.
-                    batch_norm_updates = tf.get_collection(slim.ops.UPDATE_OPS_COLLECTION, scope)
+                    batch_norm_updates = tf.get_collection(ops.UPDATE_OPS_COLLECTION, scope)
 
                     # Calculate the gradients for the batch of data on this ImageNet
                     # tower.
@@ -318,7 +318,7 @@ def train(dataset, model):
 
         if FLAGS.pretrained_model_checkpoint_path:
             assert tf.gfile.Exists(FLAGS.pretrained_model_checkpoint_path)
-            variables_to_restore = tf.get_collection(slim.variables.VARIABLES_TO_RESTORE)
+            variables_to_restore = tf.get_collection(variables.VARIABLES_TO_RESTORE)
             restorer = tf.train.Saver(variables_to_restore)
             restorer.restore(sess, FLAGS.pretrained_model_checkpoint_path)
             print('%s: Pre-trained model restored from %s' %
