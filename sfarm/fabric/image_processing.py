@@ -222,7 +222,7 @@ def image_preprocess(image_buffer, height, width, bbox=None, train=False, thread
     image = decode_jpeg(image_buffer)
 
     if train:
-        if not bbox:
+        if bbox is None:
             bbox = tf.zeros([1, 1, 4], "float")
         image = distort_image(image, height=height, width=width, bbox=bbox, thread_id=thread_id)
     else:

@@ -63,7 +63,7 @@ class DatasetFile(Dataset):
         #generate label mappings, this could also be passed in if defined externally?
         self.label_names = sorted(self.label_counts.keys())
         self.label_name_to_index = {v: k for (k, v) in enumerate(self.label_names)}
-
+        print(self.label_name_to_index)
         self.image_label_indices = [self.label_name_to_index[x] for x in self.image_label_names]
 
 

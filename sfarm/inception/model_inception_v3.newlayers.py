@@ -27,19 +27,9 @@ from __future__ import print_function
 import re
 import tensorflow as tf
 
-# from tensorflow.contrib import slim
-#from tensorflow.contrib.slim import scopes
-#from tensorflow.contrib.slim import ops
 from tensorflow.contrib.framework import arg_scope
 from tensorflow.contrib import layers
 from tensorflow.contrib import losses
-#from tensorflow.contrib.layers import conv2d
-#from tensorflow.contrib.layers import max_pool2d
-#from tensorflow.contrib.layers import fc
-#from tensorflow.contrib.layers import batch_norm
-#from tensorflow.contrib.layers import dropout
-#from tensorflow.contrib.slim import arg_scope
-#from tensorflow.contrib.slim import losses
 from tensorflow.python.ops import math_ops
 
 FLAGS = tf.app.flags.FLAGS

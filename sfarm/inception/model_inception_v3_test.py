@@ -19,7 +19,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from sfarm.inception import inception_model as inception
+from sfarm.inception import model_inception_v3 as inception
 
 
 class InceptionTest(tf.test.TestCase):
