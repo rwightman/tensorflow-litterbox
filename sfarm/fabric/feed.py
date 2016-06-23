@@ -43,7 +43,6 @@ class Feed(object):
         self.dataset = dataset
         if not dataset:
             raise ValueError('Please provide a dataset')
-        print(dataset.name)
 
         self.image_preprocess=image_preprocess
         if not image_preprocess:
@@ -55,7 +54,7 @@ class Feed(object):
 
         self.num_preprocess_threads = FLAGS.num_preprocess_threads \
             if not num_preprocess_threads else num_preprocess_threads
-        print(self.num_preprocess_threads)
+
         if self.num_preprocess_threads % 4:
             raise ValueError('Please make num_preprocess_threads a multiple '
                              'of 4 (%d % 4 != 0).', self.num_preprocess_threads)
@@ -67,8 +66,6 @@ class Feed(object):
         self.height = FLAGS.image_size
         self.width = FLAGS.image_size
         self.depth = 3
-
-        print("Feed")
 
     def num_batches_per_epoch(self):
         return self.dataset.num_examples_per_epoch() / self.batch_size
@@ -235,7 +232,7 @@ class Feed(object):
         filename_tensor = tf.convert_to_tensor(data_files, dtype=tf.string)
         label_tensor = tf.convert_to_tensor(data_labels, dtype=tf.int32)
 
-        min_after_dequeue = 1000
+        min_after_dequeue = 128
         capacity = min_after_dequeue + 3 * self.batch_size
         input_queue = tf.train.slice_input_producer(
             [filename_tensor, label_tensor],

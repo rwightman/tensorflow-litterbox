@@ -11,6 +11,7 @@ from sfarm_data import StateFarmData
 from fabric import DatasetFile
 from fabric.train import train
 from inception import ModelInceptionV3
+from vgg import ModelVgg16
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -27,7 +28,8 @@ class StateFarmDataFile(DatasetFile):
 def main(_):
     dataset = StateFarmDataFile(subset=FLAGS.subset)
     assert dataset.data_files()
-    model = ModelInceptionV3()
+    #model = ModelInceptionV3()
+    model = ModelVgg16()
     if not tf.gfile.Exists(FLAGS.train_dir):
         tf.gfile.MakeDirs(FLAGS.train_dir)
     #  tf.gfile.DeleteRecursively(FLAGS.train_dir)

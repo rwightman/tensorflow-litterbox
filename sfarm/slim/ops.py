@@ -26,8 +26,10 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import tensorflow as tf
+
 from slim import losses
-from slim import scopes
+#from slim import scopes
 from slim import variables
 
 from tensorflow.python.framework import ops
@@ -40,11 +42,8 @@ from tensorflow.python.ops import sparse_ops
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.training import moving_averages
 
-# Used to keep the update ops done by batch_norm.
-UPDATE_OPS_COLLECTION = '_update_ops_'
 
-
-@scopes.add_arg_scope
+@tf.contrib.framework.add_arg_scope
 def batch_norm(inputs,
                decay=0.999,
                center=True,
@@ -120,10 +119,10 @@ def batch_norm(inputs,
 
       update_moving_mean = moving_averages.assign_moving_average(
           moving_mean, mean, decay)
-      ops.add_to_collection(UPDATE_OPS_COLLECTION, update_moving_mean)
+      ops.add_to_collection(ops.GraphKeys.UPDATE_OPS, update_moving_mean)
       update_moving_variance = moving_averages.assign_moving_average(
           moving_variance, variance, decay)
-      ops.add_to_collection(UPDATE_OPS_COLLECTION, update_moving_variance)
+      ops.add_to_collection(ops.GraphKeys.UPDATE_OPS, update_moving_variance)
     else:
       # Just use the moving_mean and moving_variance.
       mean = moving_mean
@@ -168,7 +167,7 @@ def _two_element_tuple(int_or_tuple):
                    'length 2')
 
 
-@scopes.add_arg_scope
+@tf.contrib.framework.add_arg_scope
 def conv2d(inputs,
            num_filters_out,
            kernel_size,
@@ -234,7 +233,7 @@ def conv2d(inputs,
     conv = nn.conv2d(inputs, weights, [1, stride_h, stride_w, 1],
                         padding=padding)
     if batch_norm_params is not None:
-      with scopes.arg_scope([batch_norm], is_training=is_training,
+      with tf.contrib.framework.arg_scope([batch_norm], is_training=is_training,
                             trainable=trainable, restore=restore):
         outputs = batch_norm(conv, **batch_norm_params)
     else:
@@ -251,7 +250,7 @@ def conv2d(inputs,
     return outputs
 
 
-@scopes.add_arg_scope
+@tf.contrib.framework.add_arg_scope
 def fc(inputs,
        num_units_out,
        activation=nn.relu,
@@ -305,7 +304,7 @@ def fc(inputs,
                                  restore=restore)
     if batch_norm_params is not None:
       outputs = math_ops.matmul(inputs, weights)
-      with scopes.arg_scope([batch_norm], is_training=is_training,
+      with tf.contrib.framework.arg_scope([batch_norm], is_training=is_training,
                             trainable=trainable, restore=restore):
         outputs = batch_norm(outputs, **batch_norm_params)
     else:
@@ -343,7 +342,7 @@ def one_hot_encoding(labels, num_classes, scope=None):
     return onehot_labels
 
 
-@scopes.add_arg_scope
+@tf.contrib.framework.add_arg_scope
 def max_pool(inputs, kernel_size, stride=2, padding='VALID', scope=None):
   """Adds a Max Pooling layer.
 
@@ -375,7 +374,7 @@ def max_pool(inputs, kernel_size, stride=2, padding='VALID', scope=None):
                           padding=padding)
 
 
-@scopes.add_arg_scope
+@tf.contrib.framework.add_arg_scope
 def avg_pool(inputs, kernel_size, stride=2, padding='VALID', scope=None):
   """Adds a Avg Pooling layer.
 
@@ -405,7 +404,7 @@ def avg_pool(inputs, kernel_size, stride=2, padding='VALID', scope=None):
                           padding=padding)
 
 
-@scopes.add_arg_scope
+@tf.contrib.framework.add_arg_scope
 def dropout(inputs, keep_prob=0.5, is_training=True, scope=None):
   """Returns a dropout layer applied to the input.
 

@@ -1,1 +1,1 @@
-from inception.inception_model import ModelInceptionV3
+from inception.model_inception_v3 import ModelInceptionV3

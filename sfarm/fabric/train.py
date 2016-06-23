@@ -22,11 +22,12 @@ import time
 from datetime import datetime
 
 import copy
-import numpy as np
 import os.path
 import re
+
+import numpy as np
 import tensorflow as tf
-from slim import *
+from tensorflow.contrib import losses
 
 from .image_processing import *
 from .feed import Feed
@@ -106,7 +107,7 @@ def _tower_loss(images, labels, num_classes, model, scope):
     restore_logits = not FLAGS.fine_tune
 
     # Build inference Graph.
-    model.build(images, num_classes, for_training=True, restore_logits=restore_logits, scope=scope)
+    model.build(images, num_classes, is_training=True, restore_logits=restore_logits, scope=scope)
 
     # Build the portion of the Graph calculating the losses. Note that we will
     # assemble the total_loss using a custom function below.
@@ -114,7 +115,7 @@ def _tower_loss(images, labels, num_classes, model, scope):
     model.loss(labels, batch_size=split_batch_size)
 
     # Assemble all of the losses for the current tower only.
-    tower_losses = tf.get_collection(losses.LOSSES_COLLECTION, scope)
+    tower_losses = tf.get_collection(tf.GraphKeys.LOSSES, scope)
 
     # Calculate the total loss for the current tower.
     regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
@@ -191,11 +192,7 @@ def train(dataset, model):
             batch_size=FLAGS.batch_size,
             num_preprocess_threads=num_preprocess_threads)
 
-        # Create a variable to count the number of train() calls. This equals the
-        # number of batches processed * FLAGS.num_gpus.
-        global_step = tf.get_variable(
-            'global_step', [],
-            initializer=tf.constant_initializer(0), trainable=False)
+        global_step = tf.contrib.framework.get_or_create_global_step()
 
         # Calculate the learning rate schedule.
         num_batches_per_epoch = feed.num_batches_per_epoch()
@@ -209,9 +206,11 @@ def train(dataset, model):
                                         staircase=True)
 
         # Create an optimizer that performs gradient descent.
-        opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
-                                        momentum=RMSPROP_MOMENTUM,
-                                        epsilon=RMSPROP_EPSILON)
+        #opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
+        #                                momentum=RMSPROP_MOMENTUM,
+        #                                epsilon=RMSPROP_EPSILON)
+
+        opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
 
         #opt = tf.train.AdamOptimizer(lr)
 
@@ -233,35 +232,38 @@ def train(dataset, model):
         labels_splits = tf.split(0, FLAGS.num_gpus, labels)
 
         # Calculate the gradients for each model tower.
+        num_gpus = FLAGS.num_gpus
         tower_grads = []
-        for i in range(FLAGS.num_gpus):
+        for i in range(num_gpus):
             with tf.device('/gpu:%d' % i):
-                with tf.name_scope('%s_%d' % (model.TOWER_NAME, i)) as scope:
+                with tf.name_scope(model.scope_name(i)) as scope:
                     # Force all Variables to reside on the CPU.
-                    with arg_scope([variables.variable], device='/cpu:0'):
-                        # Calculate the loss for one tower of the ImageNet model. This
-                        # function constructs the entire ImageNet model but shares the
-                        # variables across all towers.
+                    if num_gpus > 1:
+                        with tf.contrib.framework.arg_scope(model.get_variables_fn_list(), device='/cpu:0'):
+                            # Calculate the loss for one tower of the ImageNet model. This
+                            # function constructs the entire ImageNet model but shares the
+                            # variables across all towers.
+                            loss = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
+
+                        # Reuse variables for the next tower.
+                        tf.get_variable_scope().reuse_variables()
+                    else:
                         loss = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
 
-                    # Reuse variables for the next tower.
-                    tf.get_variable_scope().reuse_variables()
-
-                    # Retain the summaries from the final tower.
-                    summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, scope)
-
-                    # Retain the Batch Normalization updates operations only from the
-                    # final tower. Ideally, we should grab the updates from all towers
-                    # but these stats accumulate extremely fast so we can ignore the
-                    # other stats from the other towers without significant detriment.
-                    batch_norm_updates = tf.get_collection(ops.UPDATE_OPS_COLLECTION, scope)
-
-                    # Calculate the gradients for the batch of data on this ImageNet
-                    # tower.
+                    # Calculate the gradients for the batch of data on this ImageNet tower.
                     grads = opt.compute_gradients(loss)
 
                     # Keep track of the gradients across all towers.
                     tower_grads.append(grads)
+
+        # Retain the summaries from the final tower.
+        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, model.last_scope())
+
+        # Retain the Batch Normalization updates operations only from the
+        # final tower. Ideally, we should grab the updates from all towers
+        # but these stats accumulate extremely fast so we can ignore the
+        # other stats from the other towers without significant detriment.
+        batch_norm_updates = tf.get_collection(tf.GraphKeys.UPDATE_OPS, model.last_scope())
 
         # We must calculate the mean of each gradient. Note that this is the
         # synchronization point across all towers.
@@ -318,7 +320,7 @@ def train(dataset, model):
 
         if FLAGS.pretrained_model_checkpoint_path:
             assert tf.gfile.Exists(FLAGS.pretrained_model_checkpoint_path)
-            variables_to_restore = tf.get_collection(variables.VARIABLES_TO_RESTORE)
+            variables_to_restore = model.variables_to_restore()
             restorer = tf.train.Saver(variables_to_restore)
             restorer.restore(sess, FLAGS.pretrained_model_checkpoint_path)
             print('%s: Pre-trained model restored from %s' %
@@ -340,8 +342,7 @@ def train(dataset, model):
 
             if step % 10 == 0:
                 examples_per_sec = FLAGS.batch_size / float(duration)
-                format_str = ('%s: step %d, loss = %.2f (%.1f examples/sec; %.3f '
-                              'sec/batch)')
+                format_str = '%s: step %d, loss = %.2f (%.1f examples/sec; %.3f sec/batch)'
                 print(format_str % (datetime.now(), step, loss_value, examples_per_sec, duration))
 
             if step % 100 == 0:

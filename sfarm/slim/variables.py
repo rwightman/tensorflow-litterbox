@@ -86,14 +86,13 @@ import tensorflow as tf
 
 from tensorflow.core.framework import graph_pb2
 from tensorflow.python.framework import dtypes
-from slim import scopes
+#from slim import scopes
 
 # Collection containing all the variables created using slim.variables
 MODEL_VARIABLES = '_model_variables_'
 
 # Collection containing the slim.variables that are created with restore=True.
 VARIABLES_TO_RESTORE = '_variables_to_restore_'
-
 
 def add_variable(var, restore=True):
   """Adds a variable to the MODEL_VARIABLES collection.
@@ -219,7 +218,7 @@ def variable_device(device, name):
   return device
 
 
-@scopes.add_arg_scope
+@tf.contrib.framework.add_arg_scope
 def global_step(device=''):
   """Returns the global step variable.
 
@@ -246,7 +245,7 @@ def global_step(device=''):
                              trainable=False, collections=collections)
 
 
-@scopes.add_arg_scope
+@tf.contrib.framework.add_arg_scope
 def variable(name, shape=None, dtype=dtypes.float32, initializer=None,
              regularizer=None, trainable=True, collections=None, device='',
              restore=True):
