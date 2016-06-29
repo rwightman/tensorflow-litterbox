@@ -31,6 +31,7 @@ def main(_):
     assert dataset.data_files()
     #model = ModelInceptionV3()
     model = ModelResnet()
+
     if not tf.gfile.Exists(FLAGS.train_dir):
         tf.gfile.MakeDirs(FLAGS.train_dir)
     tf.gfile.DeleteRecursively(FLAGS.train_dir)

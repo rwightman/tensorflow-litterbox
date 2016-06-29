@@ -235,6 +235,7 @@ def train(dataset, model):
         labels_splits = tf.split(0, num_gpus, labels)
 
         # Calculate the gradients for each model tower.
+        num_gpus = FLAGS.num_gpus
         tower_grads = []
         for i in range(num_gpus):
             with tf.device('/gpu:%d' % i):

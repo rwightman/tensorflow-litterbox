@@ -11,7 +11,6 @@ FLAGS = tf.app.flags.FLAGS
 
 IMAGENET_MEAN = [103.939, 116.779, 123.68]
 
-
 def build_vgg16(
         inputs,
         dropout_keep_prob=0.5,
@@ -188,5 +187,6 @@ class ModelVgg16(model.Model):
           labels: Labels from distorted_inputs or inputs(). batch_size vector with int32/64 values in [0, num_classes).
         """
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
+
         loss = math_ops.reduce_mean(cross_entropy)
         return loss
