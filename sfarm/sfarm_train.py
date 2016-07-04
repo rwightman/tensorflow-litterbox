@@ -27,10 +27,10 @@ class StateFarmDataFile(DatasetFile):
         return 10
 
 def main(_):
-    dataset = StateFarmData(subset=FLAGS.subset)
+    dataset = StateFarmDataFile(subset=FLAGS.subset)
     assert dataset.data_files()
-    #model = ModelInceptionV3()
-    model = ModelResnet()
+    model = ModelInceptionV3()
+    #model = ModelResnet()
 
     if not tf.gfile.Exists(FLAGS.train_dir):
         tf.gfile.MakeDirs(FLAGS.train_dir)

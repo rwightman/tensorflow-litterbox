@@ -386,8 +386,8 @@ class ModelInceptionV3(model.Model):
           batch_size: integer
           scope: the scope name for the loss to calculate, uses scope of last model instance if None
         """
-        instance = self.instance(scope.name if scope else None)
-        print(instance.name)
+
+        instance = self.instance(scope)
 
         if not batch_size:
             batch_size = FLAGS.batch_size

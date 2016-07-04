@@ -115,7 +115,8 @@ def _tower_loss(images, labels, num_classes, model, scope):
     model.loss(labels, batch_size=split_batch_size)
 
     # Assemble all of the losses for the current tower only.
-    tower_losses = tf.get_collection(tf.GraphKeys.LOSSES, scope)
+    tower_losses = tf.contrib.losses.get_losses(scope)
+    print(tower_losses)
 
     # Calculate the total loss for the current tower.
     regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
@@ -206,15 +207,15 @@ def train(dataset, model):
                                         staircase=True)
 
         # Create an optimizer that performs gradient descent.
-        #opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
-        #                                momentum=RMSPROP_MOMENTUM,
-        #                                epsilon=RMSPROP_EPSILON)
+        opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
+                                        momentum=RMSPROP_MOMENTUM,
+                                        epsilon=RMSPROP_EPSILON)
 
         #opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
 
         #opt = tf.train.AdamOptimizer(lr, epsilon=.01)
 
-        opt = tf.train.MomentumOptimizer(lr, 0.9)
+        #opt = tf.train.MomentumOptimizer(lr, 0.9)
 
         # Get images and labels for ImageNet and split the batch across GPUs.
         assert FLAGS.batch_size % FLAGS.num_gpus == 0, (
@@ -235,7 +236,6 @@ def train(dataset, model):
         labels_splits = tf.split(0, num_gpus, labels)
 
         # Calculate the gradients for each model tower.
-        num_gpus = FLAGS.num_gpus
         tower_grads = []
         for i in range(num_gpus):
             with tf.device('/gpu:%d' % i):
