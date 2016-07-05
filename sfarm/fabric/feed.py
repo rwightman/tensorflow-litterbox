@@ -13,6 +13,8 @@ tf.app.flags.DEFINE_integer('batch_size', 16,
                             """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('image_size', 299,
                             """Provide square images of this size.""")
+tf.app.flags.DEFINE_string('image_fmt', 'default',
+                            """Either 'default' RGB [-1,1] or 'caffe' BGR [0,255]""")
 tf.app.flags.DEFINE_integer('num_preprocess_threads', 4,
                             """Number of preprocessing threads per tower. """
                             """Please make this a multiple of 4.""")
@@ -66,6 +68,7 @@ class Feed(object):
         self.height = FLAGS.image_size
         self.width = FLAGS.image_size
         self.depth = 3
+        self.caffe_fmt = True if FLAGS.image_fmt == 'caffe' else False
 
     def num_batches_per_epoch(self):
         return self.dataset.num_examples_per_epoch() / self.batch_size
@@ -198,7 +201,8 @@ class Feed(object):
             # Parse a serialized Example proto to extract the image and metadata.
             image_buffer, label_index, bbox, _, filename = self.proto_parser(example_serialized)
             tf.Print(image_buffer, [label_index])
-            image = self.image_preprocess(image_buffer, self.height, self.width, bbox, train, thread_id)
+            image = self.image_preprocess(
+                image_buffer, self.height, self.width, bbox, self.caffe_fmt, train, thread_id)
             inputs.append([image, label_index, filename])
 
         return inputs
@@ -248,7 +252,7 @@ class Feed(object):
             image_buffer = tf.read_file(filename)
             image = self.image_preprocess(
                 image_buffer,
-                height=self.height, width=self.width,
+                height=self.height, width=self.width, caffe_fmt=self.caffe_fmt,
                 train=train, thread_id=thread_id)
             inputs.append([image, label_index, filename])
 

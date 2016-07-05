@@ -9,9 +9,6 @@ from tensorflow.python.ops import math_ops
 
 FLAGS = tf.app.flags.FLAGS
 
-VGG_MEAN = [103.939, 116.779, 123.68]
-
-
 #@layers.add_arg_scope
 def block(net, num_filters_internal, block_stride, bottleneck=True, activation_fn=tf.nn.relu):
 
@@ -95,7 +92,7 @@ def build_resnet(
                 endpoints['avg_pool'] = net
 
                 with tf.variable_scope('logits'):
-                    logits = layers.fully_connected(net, num_classes, scope='logits') #restore=restore_logits
+                    logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits') #restore=restore_logits
                     # 1 x 1 x num_classes
                     endpoints['logits'] = logits
                     endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
@@ -111,18 +108,17 @@ class ModelResnet(model.Model):
     def __init__(self):
         super(ModelResnet, self).__init__()
 
-    # Input should be an rgb image [batch, height, width, 3]
-    # values scaled [0, 1]
-    def build(self, inputs_rgb, num_classes, variant='34', is_training=False, restore_logits=True, scope=None):
+    def build(self, inputs, num_classes, variant='34', is_training=False, restore_logits=True, scope=None):
 
-        #[18]  = {{2, 2, 2, 2}, 512, basicblock},
-        #[34]  = {{3, 4, 6, 3}, 512, basicblock},
-        #[50]  = {{3, 4, 6, 3}, 2048, bottleneck},
-        #[101] = {{3, 4, 23, 3}, 2048, bottleneck},
-        #[152] = {{3, 8, 36, 3}, 2048, bottleneck},
+        # [layer] config params
+        # [18]  = {{2, 2, 2, 2}, 512, basic},
+        # [34]  = {{3, 4, 6, 3}, 512, basic},
+        # [50]  = {{3, 4, 6, 3}, 2048, bottleneck},
+        # [101] = {{3, 4, 23, 3}, 2048, bottleneck},
+        # [152] = {{3, 8, 36, 3}, 2048, bottleneck},
 
-        #34 layer
-        bottleneck=False
+        # 34 layer config
+        bottleneck=False  # basic
         num_blocks = [3, 4, 6, 3]
 
         batch_norm_params = {
@@ -144,7 +140,7 @@ class ModelResnet(model.Model):
                     normalizer_params=batch_norm_params):
 
                 logits, endpoints = build_resnet(
-                    inputs_rgb,
+                    inputs,
                     num_classes=num_classes,
                     num_blocks=num_blocks,
                     bottleneck=bottleneck,
@@ -159,7 +155,7 @@ class ModelResnet(model.Model):
         )
 
         # Add summaries for viewing model statistics on TensorBoard.
-        #self.activation_summaries()
+        self.activation_summaries()
 
         return logits, None
 

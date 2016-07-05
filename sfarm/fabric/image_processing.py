@@ -42,6 +42,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
+IMAGENET_MEAN = [103.939, 116.779, 123.68]
 
 def decode_jpeg(image_buffer, depth=3, scope=None):
     """Decode a JPEG string into one 3-D float image Tensor.
@@ -199,7 +200,7 @@ def eval_image(image, height, width, scope=None):
         return image
 
 
-def image_preprocess(image_buffer, height, width, bbox=None, train=False, thread_id=0):
+def image_preprocess(image_buffer, height, width, bbox=None, caffe_fmt=False, train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -228,7 +229,19 @@ def image_preprocess(image_buffer, height, width, bbox=None, train=False, thread
     else:
         image = eval_image(image, height, width)
 
-    # Finally, rescale to [-1,1] instead of [0, 1)
-    image = tf.sub(image, 0.5)
-    image = tf.mul(image, 2.0)
+    if caffe_fmt:
+        # Rescale to [0, 255]
+        image = tf.mul(image, 255.0)
+        # Convert RGB to BGR
+        red, green, blue = tf.split(3, 3, image)
+        image = tf.concat(3, [
+            blue - IMAGENET_MEAN[0],
+            green - IMAGENET_MEAN[1],
+            red - IMAGENET_MEAN[2],
+            ])
+    else:
+        # Finally, rescale to [-1,1] instead of [0, 1)
+        image = tf.sub(image, 0.5)
+        image = tf.mul(image, 2.0)
+
     return image

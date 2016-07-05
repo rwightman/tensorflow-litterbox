@@ -9,7 +9,6 @@ from tensorflow.python.ops import math_ops
 
 FLAGS = tf.app.flags.FLAGS
 
-IMAGENET_MEAN = [103.939, 116.779, 123.68]
 
 def build_vgg16(
         inputs,
@@ -75,7 +74,7 @@ def build_vgg16(
                 endpoints['fc7'] = net
 
                 with tf.variable_scope('logits'):
-                    logits = layers.fully_connected(net, num_classes, scope='logits') #restore=restore_logits
+                    logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits') #restore=restore_logits
                     # 1 x 1 x num_classes
                     endpoints['logits'] = logits
                     endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
@@ -93,20 +92,7 @@ class ModelVgg16(model.Model):
 
     # Input should be an rgb image [batch, height, width, 3]
     # values scaled [0, 1]
-    def build(self, inputs_rgb, num_classes, is_training=False, restore_logits=True, scope=None):
-
-        # rgb_scaled = inputs_rgb * 255.0
-
-        # # Convert RGB to BGR
-        # red, green, blue = tf.split(3, 3, rgb_scaled)
-        # assert red.get_shape().as_list()[1:] == [224, 224, 1]
-        # assert green.get_shape().as_list()[1:] == [224, 224, 1]
-        # assert blue.get_shape().as_list()[1:] == [224, 224, 1]
-        # inputs_bgr = tf.concat(3, [
-        #     blue - IMAGENET_MEAN[0],
-        #     green - IMAGENET_MEAN[1],
-        #     red - IMAGENET_MEAN[2],
-        # ])
+    def build(self, inputs, num_classes, is_training=False, restore_logits=True, scope=None):
 
         batch_norm_params = {
             # Decay for the moving averages.
@@ -114,20 +100,22 @@ class ModelVgg16(model.Model):
             # epsilon to prevent 0s in variance.
             'epsilon': 0.001,
         }
-        l2_regularizer = None #layers.l2_regularizer(0.0004) #0.00004
+        l2_regularizer = layers.l2_regularizer(0.0005) #0.00004
 
         with arg_scope(
                 [layers.conv2d, layers.fully_connected],
-                weights_initializer=layers.xavier_initializer(),
+                weights_initializer=layers.variance_scaling_initializer(factor=.5),
                 weights_regularizer=l2_regularizer,
-                activation_fn=tf.nn.relu):
+                activation_fn=tf.nn.relu
+        ):
             with arg_scope(
                     [layers.conv2d],
                     normalizer_fn=layers.batch_norm,
-                    normalizer_params=batch_norm_params):
+                    normalizer_params=batch_norm_params
+            ):
 
                 logits, endpoints = build_vgg16(
-                    inputs_rgb,
+                    inputs,
                     num_classes=num_classes,
                     is_training=is_training,
                     restore_logits=restore_logits,

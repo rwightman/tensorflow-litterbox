@@ -27,7 +27,7 @@ import re
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.contrib import losses
+#from tensorflow.contrib import losses
 
 from .image_processing import *
 from .feed import Feed
@@ -132,6 +132,7 @@ def _tower_loss(images, labels, num_classes, model, scope):
         # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
         # session. This helps the clarity of presentation on TensorBoard.
         loss_name = re.sub('%s_[0-9]*/' % model.TOWER_NAME, '', l.op.name)
+        print(loss_name)
         # Name each loss as '(raw)' and name the moving average version of the loss
         # as the original loss name.
         tf.scalar_summary(loss_name + ' (raw)', l)
@@ -139,8 +140,9 @@ def _tower_loss(images, labels, num_classes, model, scope):
 
     with tf.control_dependencies([loss_averages_op]):
         total_loss = tf.identity(total_loss)
+        output_loss = tf.identity(tower_losses[0])
 
-    return total_loss
+    return total_loss, output_loss
 
 
 def _average_gradients(tower_grads):
@@ -207,20 +209,18 @@ def train(dataset, model):
                                         staircase=True)
 
         # Create an optimizer that performs gradient descent.
-        opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
-                                        momentum=RMSPROP_MOMENTUM,
-                                        epsilon=RMSPROP_EPSILON)
+        #opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
+        #                                momentum=RMSPROP_MOMENTUM,
+        #                                epsilon=RMSPROP_EPSILON)
 
         #opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
 
         #opt = tf.train.AdamOptimizer(lr, epsilon=.01)
 
-        #opt = tf.train.MomentumOptimizer(lr, 0.9)
+        opt = tf.train.MomentumOptimizer(lr, 0.9)
 
         # Get images and labels for ImageNet and split the batch across GPUs.
-        assert FLAGS.batch_size % FLAGS.num_gpus == 0, (
-            'Batch size must be divisible by number of GPUs')
-        split_batch_size = int(FLAGS.batch_size / FLAGS.num_gpus)
+        assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
 
         images, labels, _ = feed.distorted_inputs()
 
@@ -246,15 +246,15 @@ def train(dataset, model):
                             # Calculate the loss for one tower of the ImageNet model. This
                             # function constructs the entire ImageNet model but shares the
                             # variables across all towers.
-                            loss = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
+                            tower_losses = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
 
                         # Reuse variables for the next tower.
                         tf.get_variable_scope().reuse_variables()
                     else:
-                        loss = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
+                        tower_losses = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
 
                     # Calculate the gradients for the batch of data on this ImageNet tower.
-                    grads = opt.compute_gradients(loss)
+                    grads = opt.compute_gradients(tower_losses[0])
 
                     # Keep track of the gradients across all towers.
                     tower_grads.append(grads)
@@ -338,15 +338,15 @@ def train(dataset, model):
 
         for step in range(FLAGS.max_steps):
             start_time = time.time()
-            _, loss_value = sess.run([train_op, loss])
+            _, loss_values = sess.run([train_op, tower_losses])
             duration = time.time() - start_time
 
-            assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
+            assert not np.isnan(loss_values[0]), 'Model diverged with loss = NaN'
 
             if step % 10 == 0:
                 examples_per_sec = FLAGS.batch_size / float(duration)
-                format_str = '%s: step %d, loss = %.2f (%.1f examples/sec; %.3f sec/batch)'
-                print(format_str % (datetime.now(), step, loss_value, examples_per_sec, duration))
+                format_str = '%s: step %d, total loss = %.2f output loss = %.4f (%.1f examples/sec; %.3f sec/batch)'
+                print(format_str % (datetime.now(), step, loss_values[0], loss_values[1], examples_per_sec, duration))
 
             if step % 100 == 0:
                 summary_str = sess.run(summary_op)
