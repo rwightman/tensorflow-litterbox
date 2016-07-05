@@ -338,15 +338,15 @@ def train(dataset, model):
 
         for step in range(FLAGS.max_steps):
             start_time = time.time()
-            _, loss_values = sess.run([train_op, tower_losses])
+            _, total_loss_value, output_loss_value = sess.run([train_op, tower_losses[0], tower_losses[1]])
             duration = time.time() - start_time
 
-            assert not np.isnan(loss_values[0]), 'Model diverged with loss = NaN'
+            assert not np.isnan(total_loss_value), 'Model diverged with loss = NaN'
 
             if step % 10 == 0:
                 examples_per_sec = FLAGS.batch_size / float(duration)
                 format_str = '%s: step %d, total loss = %.2f output loss = %.4f (%.1f examples/sec; %.3f sec/batch)'
-                print(format_str % (datetime.now(), step, loss_values[0], loss_values[1], examples_per_sec, duration))
+                print(format_str % (datetime.now(), step, total_loss_value, output_loss_value, examples_per_sec, duration))
 
             if step % 100 == 0:
                 summary_str = sess.run(summary_op)
