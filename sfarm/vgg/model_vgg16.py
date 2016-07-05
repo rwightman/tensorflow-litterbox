@@ -103,15 +103,19 @@ class ModelVgg16(model.Model):
         l2_regularizer = layers.l2_regularizer(0.0005) #0.00004
 
         with arg_scope(
-                [layers.conv2d, layers.fully_connected],
-                weights_initializer=layers.variance_scaling_initializer(factor=.5),
+                [layers.fully_connected],
+                biases_initializer=tf.constant_initializer(0.1),
+                weights_initializer=layers.variance_scaling_initializer(factor=1.0),
                 weights_regularizer=l2_regularizer,
                 activation_fn=tf.nn.relu
         ):
             with arg_scope(
                     [layers.conv2d],
                     normalizer_fn=layers.batch_norm,
-                    normalizer_params=batch_norm_params
+                    normalizer_params=batch_norm_params,
+                    weights_initializer=layers.variance_scaling_initializer(factor=1.0),
+                    weights_regularizer=l2_regularizer,
+                    activation_fn=tf.nn.relu
             ):
 
                 logits, endpoints = build_vgg16(
