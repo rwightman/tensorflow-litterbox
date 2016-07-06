@@ -68,27 +68,32 @@ def build_resnet(
                     net = layers.conv2d(inputs, 64, [7, 7], stride=2)
                     net = layers.max_pool2d(net, [3, 3], stride=2)
                     endpoints['scale1'] = net
+                    print('scale1', net.get_shape())
 
                 with tf.variable_scope('scale2'):
-                    net = stack(net, 64, num_blocks[0], stack_stride=1, bottleneck=bottleneck)
+                    net = stack(net, num_blocks[0], 64, stack_stride=1, bottleneck=bottleneck)
                     endpoints['scale2'] = net
+                    print('scale2', net.get_shape())
 
                 with tf.variable_scope('scale3'):
-                    net = stack(net, 128, num_blocks[1], stack_stride=2, bottleneck=bottleneck)
+                    net = stack(net, num_blocks[1], 128, stack_stride=2, bottleneck=bottleneck)
                     endpoints['scale3'] = net
+                    print('scale3', net.get_shape())
 
                 with tf.variable_scope('scale4'):
-                    net = stack(net, 256, num_blocks[2], stack_stride=2, bottleneck=bottleneck)
+                    net = stack(net, num_blocks[2], 256, stack_stride=2, bottleneck=bottleneck)
                     endpoints['scale4'] = net
+                    print('scale4', net.get_shape())
 
                 with tf.variable_scope('scale5'):
-                    net = stack(net, 512, num_blocks[3], stack_stride=2, bottleneck=bottleneck)
+                    net = stack(net, num_blocks[3], 512, stack_stride=2, bottleneck=bottleneck)
                     endpoints['scale5'] = net
+                    print('scale5', net.get_shape())
 
                 #net = tf.reduce_mean(net, reduction_indices=[1, 2], name="avg_pool")
                 net = layers.avg_pool2d(net, [7, 7], scope='avg_pool')
                 net = layers.flatten(net, scope='flatten')
-                print(net.get_shape())
+                print('avg_pool', net.get_shape())
                 endpoints['avg_pool'] = net
 
                 with tf.variable_scope('logits'):
