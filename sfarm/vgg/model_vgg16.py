@@ -111,8 +111,8 @@ class ModelVgg16(model.Model):
         ):
             with arg_scope(
                     [layers.conv2d],
-                    normalizer_fn=layers.batch_norm,
-                    normalizer_params=batch_norm_params,
+                    #normalizer_fn=layers.batch_norm,
+                    #normalizer_params=batch_norm_params,
                     weights_initializer=layers.variance_scaling_initializer(factor=1.0),
                     weights_regularizer=l2_regularizer,
                     activation_fn=tf.nn.relu

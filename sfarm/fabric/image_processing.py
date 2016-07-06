@@ -233,8 +233,8 @@ def image_preprocess(image_buffer, height, width, bbox=None, caffe_fmt=False, tr
         # Rescale to [0, 255]
         image = tf.mul(image, 255.0)
         # Convert RGB to BGR
-        red, green, blue = tf.split(3, 3, image)
-        image = tf.concat(3, [
+        red, green, blue = tf.split(2, 3, image)
+        image = tf.concat(2, [
             blue - IMAGENET_MEAN[0],
             green - IMAGENET_MEAN[1],
             red - IMAGENET_MEAN[2],
