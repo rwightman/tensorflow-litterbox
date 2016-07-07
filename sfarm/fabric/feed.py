@@ -114,7 +114,7 @@ class Feed(object):
         """
         with tf.name_scope('batch_processing'):
 
-            inputs = self._batch_inputs_record(train) if self.dataset.record \
+            inputs = self._batch_inputs_record(train) if self.dataset.is_record \
                 else self._batch_inputs_file(train)
 
             images, label_index_batch, filename_batch = tf.train.batch_join(
@@ -200,7 +200,6 @@ class Feed(object):
         for thread_id in range(self.num_preprocess_threads):
             # Parse a serialized Example proto to extract the image and metadata.
             image_buffer, label_index, bbox, _, filename = self.proto_parser(example_serialized)
-            tf.Print(image_buffer, [label_index])
             image = self.image_preprocess(
                 image_buffer, self.height, self.width, bbox, self.caffe_fmt, train, thread_id)
             inputs.append([image, label_index, filename])

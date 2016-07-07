@@ -15,6 +15,7 @@ import tensorflow as tf
 
 from .image_processing import *
 from .feed import Feed
+from fabric import util
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -36,23 +37,12 @@ def _predict(feed, saver, softmax_op, filenames_op):
     """Runs prediction
     """
     with tf.Session() as sess:
-        ckpt = tf.train.get_checkpoint_state(FLAGS.checkpoint_dir)
-        if ckpt and ckpt.model_checkpoint_path:
-            if os.path.isabs(ckpt.model_checkpoint_path):
-                # Restores from checkpoint with absolute path.
-                saver.restore(sess, ckpt.model_checkpoint_path)
-            else:
-                # Restores from checkpoint with relative path.
-                saver.restore(sess, os.path.join(FLAGS.checkpoint_dir, ckpt.model_checkpoint_path))
-
-            # Assuming model_checkpoint_path looks something like:
-            #   /my-favorite-path/imagenet_train/model.ckpt-0,
-            # extract global_step from it.
-            global_step = ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1]
-            print('Succesfully loaded model from %s at step=%s.' % (ckpt.model_checkpoint_path, global_step))
-        else:
-            print('No checkpoint file found')
+        checkpoint_path, global_step = util.resolve_checkpoint_path(FLAGS.checkpoint_path)
+        if not checkpoint_path:
+            print('No checkpoint file found at %s' % FLAGS.checkpoint_path)
             return
+        saver.restore(sess, checkpoint_path)
+        print('Successfully loaded model from %s at step=%d.' % (checkpoint_path, global_step))
 
         # Start the queue runners.
         coord = tf.train.Coordinator()
@@ -106,7 +96,7 @@ def predict(dataset, model):
 
         # Number of classes in the Dataset label set plus 1.
         # Label 0 is reserved for an (unused) background class.
-        num_classes = dataset.num_classes() + 1
+        num_classes = dataset.num_classes_with_background()
 
         # Build a Graph that computes the logits predictions from the inference model.
         logits, _ = model.build(images, num_classes)

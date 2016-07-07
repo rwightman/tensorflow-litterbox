@@ -48,33 +48,34 @@ def get_image_files_and_labels(folder, types=('.jpg', '.jpeg')):
                 labels.append(label)
     return label_counts, labels, filenames
 
+
 class DatasetFile(Dataset):
     """A simple class for handling file (non-record) data sets."""
     metaclass__ = ABCMeta
 
-    def __init__(self, name, subset):
+    def __init__(self, name, subset, add_background_class=False):
         """Initialize dataset using a subset and the path to the data."""
-        super(DatasetFile, self).__init__(name, subset, record=False)
+        super(DatasetFile, self).__init__(name, subset, is_record=False)
         self.file_folder = os.path.join(FLAGS.data_dir, subset)
         self.label_counts, self.image_label_names, self.image_filenames = \
             get_image_files_and_labels(self.file_folder)
         self.num_examples = sum(self.label_counts.values())
 
-        #generate label mappings, this could also be passed in if defined externally?
-        self.label_names = sorted(self.label_counts.keys())
-        self.label_name_to_index = {v: k for (k, v) in enumerate(self.label_names)}
-        print(self.label_name_to_index)
-        self.image_label_indices = [self.label_name_to_index[x] for x in self.image_label_names]
+        self.label_names = []
+        if add_background_class:
+            self.label_names += ['background']
+            self.has_background_class = True
 
+        # Generate label mappings
+        # TODO This could be passed in if defined externally?
+        # NOTE Currently assumes lexical order for labels (aside from 'background')
+        self.label_names += sorted(self.label_counts.keys())
+        self.label_name_to_index = {v: k for (k, v) in enumerate(self.label_names)}
+        self.image_label_indices = [self.label_name_to_index[x] for x in self.image_label_names]
 
     def num_examples_per_epoch(self):
         """Returns the number of examples in the data subset."""
         return self.num_examples
-
-    @abstractmethod
-    def download_message(self):
-        """Prints a download message for the Dataset."""
-        pass
 
     def available_subsets(self):
         """Returns the list of available subsets."""

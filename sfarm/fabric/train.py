@@ -20,14 +20,12 @@ from __future__ import print_function
 
 import time
 from datetime import datetime
-
 import copy
 import os.path
 import re
 
 import numpy as np
 import tensorflow as tf
-#from tensorflow.contrib import losses
 
 from .image_processing import *
 from .feed import Feed
@@ -37,12 +35,14 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string('train_dir', '/tmp/imagenet_train',
                            """Directory where to write event logs """
                            """and checkpoint.""")
+
 tf.app.flags.DEFINE_integer('max_steps', 10000000,
                             """Number of batches to run.""")
 
 # Flags governing the hardware employed for running TensorFlow.
 tf.app.flags.DEFINE_integer('num_gpus', 1,
                             """How many GPUs to use.""")
+
 tf.app.flags.DEFINE_boolean('log_device_placement', False,
                             """Whether to log device placement.""")
 
@@ -51,6 +51,7 @@ tf.app.flags.DEFINE_boolean('fine_tune', False,
                             """If set, randomly initialize the final layer """
                             """of weights in order to train the network on a """
                             """new task.""")
+
 tf.app.flags.DEFINE_string('pretrained_model_checkpoint_path', '',
                            """If specified, restore this pretrained model """
                            """before beginning any training.""")
@@ -180,138 +181,146 @@ def _average_gradients(tower_grads):
         v = grad_and_vars[0][1]
         grad_and_var = (grad, v)
         average_grads.append(grad_and_var)
+
     return average_grads
 
 
-def train(dataset, model):
+def _train_graph(dataset, model):
+    # Override the number of preprocessing threads to account for the increased
+    # number of GPU towers.
+    num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus
+    feed = Feed(
+        dataset, image_preprocess,
+        batch_size=FLAGS.batch_size,
+        num_preprocess_threads=num_preprocess_threads)
 
-    """Train on dataset for a number of steps."""
-    with tf.Graph().as_default(), tf.device('/cpu:0'):
-        # Override the number of preprocessing threads to account for the increased
-        # number of GPU towers.
-        num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus
-        feed = Feed(
-            dataset, image_preprocess,
-            batch_size=FLAGS.batch_size,
-            num_preprocess_threads=num_preprocess_threads)
+    global_step = tf.contrib.framework.get_or_create_global_step()
 
-        global_step = tf.contrib.framework.get_or_create_global_step()
+    # Calculate the learning rate schedule.
+    num_batches_per_epoch = feed.num_batches_per_epoch()
+    decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
 
-        # Calculate the learning rate schedule.
-        num_batches_per_epoch = feed.num_batches_per_epoch()
-        decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
+    # Decay the learning rate exponentially based on the number of steps.
+    lr = tf.train.exponential_decay(
+        FLAGS.initial_learning_rate,
+        global_step,
+        decay_steps,
+        FLAGS.learning_rate_decay_factor,
+        staircase=True)
 
-        # Decay the learning rate exponentially based on the number of steps.
-        lr = tf.train.exponential_decay(FLAGS.initial_learning_rate,
-                                        global_step,
-                                        decay_steps,
-                                        FLAGS.learning_rate_decay_factor,
-                                        staircase=True)
+    # Create an optimizer that performs gradient descent.
+    # opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
+    #                                momentum=RMSPROP_MOMENTUM,
+    #                                epsilon=RMSPROP_EPSILON)
 
-        # Create an optimizer that performs gradient descent.
-        #opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
-        #                                momentum=RMSPROP_MOMENTUM,
-        #                                epsilon=RMSPROP_EPSILON)
+    opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
 
-        #opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
+    # opt = tf.train.AdamOptimizer(lr, epsilon=.01)
 
-        #opt = tf.train.AdamOptimizer(lr, epsilon=.01)
+    # opt = tf.train.MomentumOptimizer(lr, 0.9)
 
-        opt = tf.train.MomentumOptimizer(lr, 0.9)
+    # Get images and labels for ImageNet and split the batch across GPUs.
+    assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
 
-        # Get images and labels for ImageNet and split the batch across GPUs.
-        assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
+    images, labels, _ = feed.distorted_inputs()
 
-        images, labels, _ = feed.distorted_inputs()
+    input_summaries = copy.copy(tf.get_collection(tf.GraphKeys.SUMMARIES))
 
-        input_summaries = copy.copy(tf.get_collection(tf.GraphKeys.SUMMARIES))
+    # Number of classes in the Dataset label set plus 1.
+    # Label 0 is reserved for an (unused) background class if specified by dataset
+    num_classes = dataset.num_classes_with_background()
 
-        # Number of classes in the Dataset label set plus 1.
-        # Label 0 is reserved for an (unused) background class.
-        num_classes = dataset.num_classes() + 1
+    num_gpus = FLAGS.num_gpus
+    # Split the batch of images and labels for towers.
+    images_splits = tf.split(0, num_gpus, images)
+    labels_splits = tf.split(0, num_gpus, labels)
 
-        num_gpus = FLAGS.num_gpus
-        # Split the batch of images and labels for towers.
-        images_splits = tf.split(0, num_gpus, images)
-        labels_splits = tf.split(0, num_gpus, labels)
-
-        # Calculate the gradients for each model tower.
-        tower_grads = []
-        for i in range(num_gpus):
-            with tf.device('/gpu:%d' % i):
-                with tf.name_scope(model.scope_name(i)) as scope:
-                    # Force all Variables to reside on the CPU.
-                    if num_gpus > 1:
-                        with tf.contrib.framework.arg_scope(model.get_variables_fn_list(), device='/cpu:0'):
-                            # Calculate the loss for one tower of the ImageNet model. This
-                            # function constructs the entire ImageNet model but shares the
-                            # variables across all towers.
-                            tower_losses = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
-
-                        # Reuse variables for the next tower.
-                        tf.get_variable_scope().reuse_variables()
-                    else:
+    # Calculate the gradients for each model tower.
+    tower_grads = []
+    for i in range(num_gpus):
+        with tf.device('/gpu:%d' % i):
+            with tf.name_scope(model.scope_name(i)) as scope:
+                # Force all Variables to reside on the CPU.
+                if num_gpus > 1:
+                    with tf.contrib.framework.arg_scope(model.get_variables_fn_list(), device='/cpu:0'):
+                        # Calculate the loss for one tower of the ImageNet model. This
+                        # function constructs the entire ImageNet model but shares the
+                        # variables across all towers.
                         tower_losses = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
 
-                    # Calculate the gradients for the batch of data on this ImageNet tower.
-                    grads = opt.compute_gradients(tower_losses[0])
+                    # Reuse variables for the next tower.
+                    tf.get_variable_scope().reuse_variables()
+                else:
+                    tower_losses = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
 
-                    # Keep track of the gradients across all towers.
-                    tower_grads.append(grads)
+                # Calculate the gradients for the batch of data on this ImageNet tower.
+                grads = opt.compute_gradients(tower_losses[0])
 
-        # Retain the summaries from the final tower.
-        summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, model.last_scope())
+                # Keep track of the gradients across all towers.
+                tower_grads.append(grads)
 
-        # Retain the Batch Normalization updates operations only from the
-        # final tower. Ideally, we should grab the updates from all towers
-        # but these stats accumulate extremely fast so we can ignore the
-        # other stats from the other towers without significant detriment.
-        batch_norm_updates = tf.get_collection(tf.GraphKeys.UPDATE_OPS, model.last_scope())
+    # Retain the summaries from the final tower.
+    summaries = tf.get_collection(tf.GraphKeys.SUMMARIES, model.last_scope())
 
-        # We must calculate the mean of each gradient. Note that this is the
-        # synchronization point across all towers.
-        grads = _average_gradients(tower_grads)
+    # Retain the Batch Normalization updates operations only from the
+    # final tower. Ideally, we should grab the updates from all towers
+    # but these stats accumulate extremely fast so we can ignore the
+    # other stats from the other towers without significant detriment.
+    batch_norm_updates = tf.get_collection(tf.GraphKeys.UPDATE_OPS, model.last_scope())
 
-        # Add a summaries for the input processing and global_step.
-        summaries.extend(input_summaries)
+    # We must calculate the mean of each gradient. Note that this is the
+    # synchronization point across all towers.
+    grads = _average_gradients(tower_grads)
 
-        # Add a summary to track the learning rate.
-        summaries.append(tf.scalar_summary('learning_rate', lr))
+    # Add a summaries for the input processing and global_step.
+    summaries.extend(input_summaries)
 
-        # Add histograms for gradients.
-        for grad, var in grads:
-            if grad is not None:
-                summaries.append(tf.histogram_summary(var.op.name + '/gradients', grad))
+    # Add a summary to track the learning rate.
+    summaries.append(tf.scalar_summary('learning_rate', lr))
 
-        # Apply the gradients to adjust the shared variables.
-        apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
+    # Add histograms for gradients.
+    for grad, var in grads:
+        if grad is not None:
+            summaries.append(tf.histogram_summary(var.op.name + '/gradients', grad))
 
-        # Add histograms for trainable variables.
-        for var in tf.trainable_variables():
-            summaries.append(tf.histogram_summary(var.op.name, var))
+    # Apply the gradients to adjust the shared variables.
+    apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
 
-        # Track the moving averages of all trainable variables.
-        # Note that we maintain a "double-average" of the BatchNormalization
-        # global statistics. This is more complicated then need be but we employ
-        # this for backward-compatibility with our previous models.
-        variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY, global_step)
+    # Add histograms for trainable variables.
+    for var in tf.trainable_variables():
+        summaries.append(tf.histogram_summary(var.op.name, var))
 
-        # Another possibility is to use tf.slim.get_variables().
-        variables_to_average = (tf.trainable_variables() + tf.moving_average_variables())
-        variables_averages_op = variable_averages.apply(variables_to_average)
+    # Track the moving averages of all trainable variables.
+    # Note that we maintain a "double-average" of the BatchNormalization
+    # global statistics. This is more complicated then need be but we employ
+    # this for backward-compatibility with our previous models.
+    variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY, global_step)
 
-        # Group all updates to into a single train op.
-        batch_norm_updates_op = tf.group(*batch_norm_updates)
-        train_op = tf.group(apply_gradient_op, variables_averages_op, batch_norm_updates_op)
+    # Another possibility is to use tf.slim.get_variables().
+    variables_to_average = (tf.trainable_variables() + tf.moving_average_variables())
+    variables_averages_op = variable_averages.apply(variables_to_average)
+
+    # Group all updates to into a single train op.
+    batch_norm_updates_op = tf.group(*batch_norm_updates)
+    train_op = tf.group(apply_gradient_op, variables_averages_op, batch_norm_updates_op)
+
+    # Build the summary operation from the last tower summaries.
+    summary_op = tf.merge_summary(summaries)
+
+    # Build an initialization operation to run below.
+    init_op = tf.initialize_all_variables()
+
+    return train_op, init_op, summary_op, tower_losses
+
+
+def train(dataset, model):
+    """Train on dataset for a number of steps."""
+    with tf.Graph().as_default(), tf.device('/cpu:0'):
+
+        train_op, init_op, summary_op, tower_losses = _train_graph(dataset, model)
 
         # Create a saver.
         saver = tf.train.Saver(tf.all_variables())
-
-        # Build the summary operation from the last tower summaries.
-        summary_op = tf.merge_summary(summaries)
-
-        # Build an initialization operation to run below.
-        init = tf.initialize_all_variables()
 
         # Start running operations on the Graph. allow_soft_placement must be set to
         # True to build towers on GPU, as some of the ops do not have GPU
@@ -319,7 +328,8 @@ def train(dataset, model):
         sess = tf.Session(config=tf.ConfigProto(
             allow_soft_placement=True,
             log_device_placement=FLAGS.log_device_placement))
-        sess.run(init)
+
+        sess.run(init_op)
 
         if FLAGS.pretrained_model_checkpoint_path:
             assert tf.gfile.Exists(FLAGS.pretrained_model_checkpoint_path)
@@ -336,23 +346,23 @@ def train(dataset, model):
             FLAGS.train_dir,
             graph_def=sess.graph.as_graph_def(add_shapes=True))
 
-        for step in range(FLAGS.max_steps):
-            start_time = time.time()
-            _, total_loss_value, output_loss_value = sess.run([train_op, tower_losses[0], tower_losses[1]])
-            duration = time.time() - start_time
+    for step in range(FLAGS.max_steps):
+        start_time = time.time()
+        _, total_loss_value, output_loss_value = sess.run([train_op, tower_losses[0], tower_losses[1]])
+        duration = time.time() - start_time
 
-            assert not np.isnan(total_loss_value), 'Model diverged with loss = NaN'
+        assert not np.isnan(total_loss_value), 'Model diverged with loss = NaN'
 
-            if step % 10 == 0:
-                examples_per_sec = FLAGS.batch_size / float(duration)
-                format_str = '%s: step %d, total loss = %.2f output loss = %.4f (%.1f examples/sec; %.3f sec/batch)'
-                print(format_str % (datetime.now(), step, total_loss_value, output_loss_value, examples_per_sec, duration))
+        if step % 10 == 0:
+            examples_per_sec = FLAGS.batch_size / float(duration)
+            format_str = '%s: step %d, total loss = %.2f output loss = %.4f (%.1f examples/sec; %.3f sec/batch)'
+            print(format_str % (datetime.now(), step, total_loss_value, output_loss_value, examples_per_sec, duration))
 
-            if step % 100 == 0:
-                summary_str = sess.run(summary_op)
-                summary_writer.add_summary(summary_str, step)
+        if step % 100 == 0:
+            summary_str = sess.run(summary_op)
+            summary_writer.add_summary(summary_str, step)
 
-            # Save the model checkpoint periodically.
-            if step % 5000 == 0 or (step + 1) == FLAGS.max_steps:
-                checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-                saver.save(sess, checkpoint_path, global_step=step)
+        # Save the model checkpoint periodically.
+        if step % 5000 == 0 or (step + 1) == FLAGS.max_steps:
+            checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+            saver.save(sess, checkpoint_path, global_step=step)

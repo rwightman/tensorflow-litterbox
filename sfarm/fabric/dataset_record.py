@@ -38,7 +38,7 @@ class DatasetRecord(Dataset):
   __metaclass__ = ABCMeta
 
   def __init__(self, name, subset):
-    super(DatasetRecord, self).__init__(name, subset, record=True)
+    super(DatasetRecord, self).__init__(name, subset, is_record=True)
 
   @abstractmethod
   def num_classes(self):
@@ -55,11 +55,6 @@ class DatasetRecord(Dataset):
     # if self.subset == 'validation':
     #   return 1000
 
-  @abstractmethod
-  def download_message(self):
-    """Prints a download message for the Dataset."""
-    pass
-
   def available_subsets(self):
     """Returns the list of available subsets."""
     return ['train', 'validation']
@@ -75,11 +70,8 @@ class DatasetRecord(Dataset):
     tf_record_pattern = os.path.join(FLAGS.data_dir, '%s-*' % self.subset)
     data_files = tf.gfile.Glob(tf_record_pattern)
     if not data_files:
-      print('No files found for dataset %s/%s at %s' % (self.name,
-                                                        self.subset,
-                                                        FLAGS.data_dir))
-
-      self.download_message()
+      print('No files found for dataset %s/%s at %s' %
+            (self.name, self.subset, FLAGS.data_dir))
       exit(-1)
     return data_files
 

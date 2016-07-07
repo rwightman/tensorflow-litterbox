@@ -40,18 +40,23 @@ class Dataset(object):
     """A simple class for handling data sets."""
     __metaclass__ = ABCMeta
 
-    def __init__(self, name='Unknown', subset='Unknown', record=False):
+    def __init__(self, name='Unknown', subset='', is_record=False):
         """Initialize dataset using a subset and the path to the data."""
         assert subset in self.available_subsets(), self.available_subsets()
         self.name = name
         self.subset = subset
-        self.record = record
+        self.is_record = is_record
+        self.has_background_class = False
 
     @abstractmethod
     def num_classes(self):
         """Returns the number of classes in the data set."""
         pass
         # return 10
+
+    def num_classes_with_background(self):
+        inc = 1 if self.has_background_class else 0
+        return self.num_classes() + inc
 
     @abstractmethod
     def num_examples_per_epoch(self):
@@ -61,11 +66,6 @@ class Dataset(object):
         #   return 10000
         # if self.subset == 'validation':
         #   return 1000
-
-    @abstractmethod
-    def download_message(self):
-        """Prints a download message for the Dataset."""
-        pass
 
     def available_subsets(self):
         """Returns the list of available subsets."""
