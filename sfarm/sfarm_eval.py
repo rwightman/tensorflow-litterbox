@@ -8,12 +8,11 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from fabric.eval import evaluate
 from inception import ModelInceptionV3
 from resnet import ModelResnet
 from vgg import ModelVgg16
-from .sfarm_data import StateFarmData
-from .sfarm_data import StateFarmDataFile
+from fabric.eval import *
+from sfarm_data import *
 
 FLAGS = tf.app.flags.FLAGS
 
