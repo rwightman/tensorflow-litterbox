@@ -69,10 +69,10 @@ tf.app.flags.DEFINE_string('pretrained_model_checkpoint_path', '',
 tf.app.flags.DEFINE_float('initial_learning_rate', 0.1,
                           """Initial learning rate.""")
 
-tf.app.flags.DEFINE_float('num_epochs_per_decay', 30.0,
+tf.app.flags.DEFINE_float('num_epochs_per_decay', 10.0,
                           """Epochs after which learning rate decays.""")
 
-tf.app.flags.DEFINE_float('learning_rate_decay_factor', 0.16,
+tf.app.flags.DEFINE_float('learning_rate_decay_factor', 0.8,
                           """Learning rate decay factor.""")
 
 tf.app.flags.DEFINE_string('subset', 'train',
@@ -197,8 +197,7 @@ def _train_graph(dataset, model):
     global_step = tf.contrib.framework.get_or_create_global_step()
 
     # Calculate the learning rate schedule.
-    num_batches_per_epoch = feed.num_batches_per_epoch()
-    decay_steps = int(num_batches_per_epoch * FLAGS.num_epochs_per_decay)
+    decay_steps = int(feed.num_batches_per_epoch() * FLAGS.num_epochs_per_decay)
 
     # Decay the learning rate exponentially based on the number of steps.
     lr = tf.train.exponential_decay(
@@ -209,15 +208,15 @@ def _train_graph(dataset, model):
         staircase=True)
 
     # Create an optimizer that performs gradient descent.
-    # opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
+    #opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
     #                                momentum=RMSPROP_MOMENTUM,
     #                                epsilon=RMSPROP_EPSILON)
 
-    opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
+    # opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
 
     # opt = tf.train.AdamOptimizer(lr, epsilon=.01)
 
-    # opt = tf.train.MomentumOptimizer(lr, 0.9)
+    opt = tf.train.MomentumOptimizer(lr, 0.9)
 
     # Get images and labels for ImageNet and split the batch across GPUs.
     assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
@@ -342,27 +341,26 @@ def train(dataset, model):
         # Start the queue runners.
         tf.train.start_queue_runners(sess=sess)
 
-        summary_writer = tf.train.SummaryWriter(
-            FLAGS.train_dir,
-            graph_def=sess.graph.as_graph_def(add_shapes=True))
+        summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, graph=sess.graph)
 
-    for step in range(FLAGS.max_steps):
-        start_time = time.time()
-        _, total_loss_value, output_loss_value = sess.run([train_op, tower_losses[0], tower_losses[1]])
-        duration = time.time() - start_time
+        for step in range(FLAGS.max_steps):
+            start_time = time.time()
+            _, total_loss_value, output_loss_value = sess.run([train_op, tower_losses[0], tower_losses[1]])
+            duration = time.time() - start_time
 
-        assert not np.isnan(total_loss_value), 'Model diverged with loss = NaN'
+            assert not np.isnan(total_loss_value), 'Model diverged with loss = NaN'
 
-        if step % 10 == 0:
-            examples_per_sec = FLAGS.batch_size / float(duration)
-            format_str = '%s: step %d, total loss = %.2f output loss = %.4f (%.1f examples/sec; %.3f sec/batch)'
-            print(format_str % (datetime.now(), step, total_loss_value, output_loss_value, examples_per_sec, duration))
+            if step % 10 == 0:
+                examples_per_sec = FLAGS.batch_size / float(duration)
+                epoch = 1 + (step * FLAGS.batch_size) // dataset.num_examples_per_epoch() 
+                format_str = '%s: step %d, epoch %d, loss = %.2f total; %.4f output (%.1f examples/sec; %.3f sec/batch)'
+                print(format_str % (datetime.now(), step, epoch, total_loss_value, output_loss_value, examples_per_sec, duration))
 
-        if step % 100 == 0:
-            summary_str = sess.run(summary_op)
-            summary_writer.add_summary(summary_str, step)
+            if step % 100 == 0:
+                summary_str = sess.run(summary_op)
+                summary_writer.add_summary(summary_str, step)
 
-        # Save the model checkpoint periodically.
-        if step % 5000 == 0 or (step + 1) == FLAGS.max_steps:
-            checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
-            saver.save(sess, checkpoint_path, global_step=step)
+            # Save the model checkpoint periodically.
+            if step % 1000 == 0 or (step + 1) == FLAGS.max_steps:
+                checkpoint_path = os.path.join(FLAGS.train_dir, 'model.ckpt')
+                saver.save(sess, checkpoint_path, global_step=step)
