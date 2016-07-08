@@ -170,6 +170,9 @@ class ModelVgg16(model.Model):
     def get_variables_fn_list(self):
         return [tf.contrib.framework.variable]
 
+    def variables_to_restore(self):
+        return tf.contrib.framework.variables.get_model_variables()
+
     @staticmethod
     def loss_op(logits, labels):
         """Generate a simple (non tower based) loss op for use in evaluation.
