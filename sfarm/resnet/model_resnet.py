@@ -132,7 +132,7 @@ class ModelResnet(model.Model):
             # epsilon to prevent 0s in variance.
             'epsilon': 0.001,
         }
-        l2_regularizer = layers.l2_regularizer(0.00004)
+        l2_regularizer = layers.l2_regularizer(0.0004)
 
         with arg_scope(
                 [layers.conv2d, layers.fully_connected],
@@ -197,6 +197,9 @@ class ModelResnet(model.Model):
 
     def get_variables_fn_list(self):
         return [tf.contrib.framework.variable]
+
+    def variables_to_restore(self):
+        return tf.contrib.framework.variables.get_model_variables()
 
     @staticmethod
     def loss_op(logits, labels):
