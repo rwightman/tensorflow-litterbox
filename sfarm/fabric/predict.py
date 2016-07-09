@@ -22,7 +22,7 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string('eval_dir', '/tmp/imagenet_eval',
                            """Directory where to write event logs.""")
 
-tf.app.flags.DEFINE_string('checkpoint_dir', '/tmp/imagenet_train',
+tf.app.flags.DEFINE_string('checkpoint_path', '/tmp/imagenet_train',
                            """Directory where to read model checkpoints.""")
 
 # Flags governing the data used for the eval.
@@ -94,12 +94,12 @@ def predict(dataset, model):
         feed = Feed(dataset, image_preprocess, batch_size=FLAGS.batch_size)
         images, _, filenames = feed.inputs()
 
-        # Number of classes in the Dataset label set plus 1.
+        # Number of classes in the dataset label set plus 1.
         # Label 0 is reserved for an (unused) background class.
         num_classes = dataset.num_classes_with_background()
 
         # Build a Graph that computes the logits predictions from the inference model.
-        logits, _ = model.build(images, num_classes)
+        logits = model.build_tower(images, num_classes)
         softmax_output = tf.nn.softmax(tf.slice(logits, [0, 1], [-1, -1]))
 
         # Restore the moving average version of the learned variables for eval.

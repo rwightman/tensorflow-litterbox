@@ -320,7 +320,7 @@ class ModelInceptionV3(model.Model):
     def __init__(self):
         super(ModelInceptionV3, self).__init__()
 
-    def build(self, images, num_classes, is_training=False, restore_logits=True, scope=None):
+    def build_tower(self, images, num_classes, is_training=False, restore_logits=True, scope=None):
         """Build Inception v3 model architecture.
 
         See here for reference: http://arxiv.org/abs/1512.00567
@@ -361,7 +361,7 @@ class ModelInceptionV3(model.Model):
         # Grab the logits associated with the side head. Employed during training.
         aux_logits = endpoints['aux_logits']
 
-        self.add_instance(
+        self.add_tower(
             scope,
             endpoints,
             logits,
@@ -373,7 +373,7 @@ class ModelInceptionV3(model.Model):
 
         return logits, aux_logits
 
-    def loss(self, labels, batch_size=None, scope=None):
+    def add_tower_loss(self, labels, batch_size=None, scope=None):
         """Adds all losses for the model.
 
         Note the final loss is not returned. Instead, the list of losses are collected
@@ -384,10 +384,10 @@ class ModelInceptionV3(model.Model):
           logits: List of logits from inference(). Each entry is a 2-D float Tensor.
           labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
           batch_size: integer
-          scope: the scope name for the loss to calculate, uses scope of last model instance if None
+          scope: the scope name for the loss to calculate, uses scope of last model tower if None
         """
 
-        instance = self.instance(scope)
+        tower = self.tower(scope)
 
         if not batch_size:
             batch_size = FLAGS.batch_size
@@ -397,7 +397,7 @@ class ModelInceptionV3(model.Model):
         sparse_labels = tf.reshape(labels, [batch_size, 1])
         indices = tf.reshape(tf.range(batch_size), [batch_size, 1])
         concated = tf.concat(1, [indices, sparse_labels])
-        num_classes = instance.logits.get_shape()[-1].value
+        num_classes = tower.logits.get_shape()[-1].value
         dense_labels = tf.sparse_to_dense(concated, [batch_size, num_classes], 1.0, 0.0)
 
         # # Cross entropy loss for the main softmax prediction.
@@ -413,13 +413,13 @@ class ModelInceptionV3(model.Model):
         #                           weight=0.4,
         #                           scope='aux_loss')
 
-        losses.softmax_cross_entropy(instance.logits,
+        losses.softmax_cross_entropy(tower.logits,
                                      dense_labels,
                                      label_smoothing=0.1,
                                      weight=1.0)
 
         # Cross entropy loss for the auxiliary softmax head.
-        losses.softmax_cross_entropy(instance.aux_logits,
+        losses.softmax_cross_entropy(tower.aux_logits,
                                      dense_labels,
                                      label_smoothing=0.1,
                                      weight=0.4,
@@ -428,7 +428,7 @@ class ModelInceptionV3(model.Model):
     def variables_to_restore(self):
         return tf.get_collection(variables.VARIABLES_TO_RESTORE)
 
-    def get_variables_fn_list(self):
+    def get_variable_fns(self):
         return [variables.variable]
 
     @staticmethod

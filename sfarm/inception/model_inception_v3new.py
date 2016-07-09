@@ -329,7 +329,7 @@ class ModelInceptionV3(model.Model):
         super(ModelInceptionV3, self).__init__()
         #self.logits_scopes = ['logits/logits', 'aux_logits/FC']
 
-    def build(self, images, num_classes, is_training=False, restore_logits=True, scope=None):
+    def build_tower(self, images, num_classes, is_training=False, scope=None):
         """Build Inception v3 model architecture.
 
         See here for reference: http://arxiv.org/abs/1512.00567
@@ -337,11 +337,9 @@ class ModelInceptionV3(model.Model):
         Args:
           images: Images returned from inputs() or distorted_inputs().
           num_classes: number of classes
-          for_training: If set to `True`, build the inference model for training.
+          is_training: If set to `True`, build the inference model for training.
             Kernels that operate differently for inference during training
             e.g. dropout, are appropriately configured.
-          restore_logits: whether or not the logits layers should be restored.
-            Useful for fine-tuning a model with different num_classes.
           scope: optional prefix string identifying the ImageNet tower.
 
         Returns:
@@ -356,15 +354,14 @@ class ModelInceptionV3(model.Model):
             'epsilon': 0.001,
         }
         # Set weight_decay for weights in Conv and FC layers.
-        #weights_initializer = init_ops.truncated_normal_initializer(stddev=stddev)
         l2_regularizer = layers.l2_regularizer(0.00004)
+        
         with arg_scope(
                 [layers.conv2d, layers.fully_connected],
                 weights_initializer=layers.xavier_initializer(),
                 weights_regularizer=l2_regularizer):
             with arg_scope(
                     [layers.conv2d],
-                    #stddev=0.1,
                     activation_fn=tf.nn.relu,
                     normalizer_fn=layers.batch_norm,
                     normalizer_params=batch_norm_params):
@@ -378,7 +375,7 @@ class ModelInceptionV3(model.Model):
 
         # Grab the logits associated with the side head. Employed during training.
         aux_logits = endpoints['aux_logits']
-        self.add_instance(
+        self.add_tower(
             scope,
             endpoints,
             logits,
@@ -388,10 +385,9 @@ class ModelInceptionV3(model.Model):
         # Add summaries for viewing model statistics on TensorBoard.
         self.activation_summaries()
 
-        return logits, aux_logits
+        return logits
 
-
-    def loss(self, labels, batch_size=None, scope=None):
+    def add_tower_loss(self, labels, batch_size=None, scope=None):
         """Adds all losses for the model.
 
         Note the final loss is not returned. Instead, the list of losses are collected
@@ -402,38 +398,36 @@ class ModelInceptionV3(model.Model):
           logits: List of logits from inference(). Each entry is a 2-D float Tensor.
           labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
           batch_size: integer
+          scope: tower scope of losses to add, ie 'tower_0/', defaults to last added tower if None
         """
         if not batch_size:
             batch_size = FLAGS.batch_size
 
-        instance = self.instance(scope)
+        tower = self.tower(scope)
 
         # Reshape the labels into a dense Tensor of
         # shape [FLAGS.batch_size, num_classes].
         sparse_labels = tf.reshape(labels, [batch_size, 1])
         indices = tf.reshape(tf.range(batch_size), [batch_size, 1])
         concated = tf.concat(1, [indices, sparse_labels])
-        num_classes = instance.logits.get_shape()[-1].value
+        num_classes = tower.logits.get_shape()[-1].value
         dense_labels = tf.sparse_to_dense(concated, [batch_size, num_classes], 1.0, 0.0)
 
         # Cross entropy loss for the main softmax prediction.
-        losses.softmax_cross_entropy(instance.logits,
+        losses.softmax_cross_entropy(tower.logits,
                                      dense_labels,
                                      label_smoothing=0.1,
                                      weight=1.0)
 
         # Cross entropy loss for the auxiliary softmax head.
-        losses.softmax_cross_entropy(instance.aux_logits,
+        losses.softmax_cross_entropy(tower.aux_logits,
                                      dense_labels,
                                      label_smoothing=0.1,
                                      weight=0.4,
                                      scope='aux_loss')
 
-    #def variables_to_restore(self):
-        #return tf.get_collection(variables.VARIABLES_TO_RESTORE)
-
-    def get_variables_fn_list(self):
-        return [tf.contrib.framework.variable]
+    def logit_scopes(self):
+        return ['logits/logits', 'aux_logits/FC']
 
     @staticmethod
     def loss_op(logits, labels):

@@ -240,7 +240,7 @@ def image_preprocess(image_buffer, height, width, bbox=None, caffe_fmt=False, tr
             red - IMAGENET_MEAN[2],
             ])
     else:
-        # Finally, rescale to [-1,1] instead of [0, 1)
+        # Rescale to [-1,1] instead of [0, 1)
         image = tf.sub(image, 0.5)
         image = tf.mul(image, 2.0)
 

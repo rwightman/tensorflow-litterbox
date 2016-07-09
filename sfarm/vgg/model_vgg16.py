@@ -15,7 +15,6 @@ def build_vgg16(
         dropout_keep_prob=0.5,
         num_classes=1000,
         is_training=True,
-        restore_logits=True,
         scope=''):
     """Blah"""
 
@@ -74,7 +73,7 @@ def build_vgg16(
                 endpoints['fc7'] = net
 
                 with tf.variable_scope('logits'):
-                    logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits') #restore=restore_logits
+                    logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits')
                     # 1 x 1 x num_classes
                     endpoints['logits'] = logits
                     endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
@@ -92,7 +91,7 @@ class ModelVgg16(model.Model):
 
     # Input should be an rgb image [batch, height, width, 3]
     # values scaled [0, 1]
-    def build(self, inputs, num_classes, is_training=False, restore_logits=True, scope=None):
+    def build_tower(self, inputs, num_classes, is_training=False, scope=None):
 
         batch_norm_params = {
             # Decay for the moving averages.
@@ -122,10 +121,9 @@ class ModelVgg16(model.Model):
                     inputs,
                     num_classes=num_classes,
                     is_training=is_training,
-                    restore_logits=restore_logits,
                     scope=scope)
 
-        self.add_instance(
+        self.add_tower(
             name=scope,
             endpoints=endpoints,
             logits=logits
@@ -134,9 +132,9 @@ class ModelVgg16(model.Model):
         # Add summaries for viewing model statistics on TensorBoard.
         self.activation_summaries()
 
-        return logits, None
+        return logits
 
-    def loss(self, labels, batch_size=None, scope=None):
+    def add_tower_loss(self, labels, batch_size=None, scope=None):
         """Adds all losses for the model.
 
         Note the final loss is not returned. Instead, the list of losses are collected
@@ -151,27 +149,24 @@ class ModelVgg16(model.Model):
         if not batch_size:
             batch_size = FLAGS.batch_size
 
-        instance = self.instance(scope)
+        tower = self.tower(scope)
 
         # Reshape the labels into a dense Tensor of
         # shape [FLAGS.batch_size, num_classes].
         sparse_labels = tf.reshape(labels, [batch_size, 1])
         indices = tf.reshape(tf.range(batch_size), [batch_size, 1])
         concated = tf.concat(1, [indices, sparse_labels])
-        num_classes = instance.logits.get_shape()[-1].value
+        num_classes = tower.logits.get_shape()[-1].value
         dense_labels = tf.sparse_to_dense(concated, [batch_size, num_classes], 1.0, 0.0)
 
         # Cross entropy loss for the main softmax prediction.
-        losses.softmax_cross_entropy(instance.logits,
+        losses.softmax_cross_entropy(tower.logits,
                                      dense_labels,
                                      label_smoothing=0.1,
                                      weight=1.0)
 
-    def get_variables_fn_list(self):
-        return [tf.contrib.framework.variable]
-
-    def variables_to_restore(self):
-        return tf.contrib.framework.variables.get_model_variables()
+    def logit_scopes(self):
+        return ['logits/logits']
 
     @staticmethod
     def loss_op(logits, labels):

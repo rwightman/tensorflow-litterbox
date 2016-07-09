@@ -5,6 +5,7 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import abc
 import re
 
 
@@ -25,7 +26,7 @@ def activation_summary(x, tower_name):
     tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
 
 
-class ModelInstance(object):
+class ModelTower(object):
     def __init__(self, name, endpoints, logits, aux_logits=None):
         self.name = name
         self.endpoints = endpoints
@@ -34,59 +35,65 @@ class ModelInstance(object):
 
 
 class Model(object):
+    __metaclass__ = abc.ABCMeta
+    
     # If a model is trained using multiple GPUs, prefix all Op names with tower_name
     # to differentiate the operations. Note that this prefix is removed from the
     # names of the summaries when visualizing a model.
     TOWER_NAME = 'tower'
 
     def __init__(self):
-        self.last_instance = None
-        self.instances = {}
+        self._last_tower = None
+        self._towers = {}
 
-    def add_instance(self, name, endpoints, logits, aux_logits=None):
-        self.last_instance = ModelInstance(
+    def add_tower(self, name, endpoints, logits, aux_logits=None):
+        self._last_tower = ModelTower(
             name,
             endpoints,
             logits,
             aux_logits
         )
-        self.instances[name] = self.last_instance
+        self._towers[name] = self._last_tower
 
-    def instance(self, name=None):
-        if not self.last_instance:
-            raise RuntimeError('Loss requires a valid model instance, please build one first')
-        if not name:
-            instance = self.last_instance
-        else:
-            instance = self.instances[name]
-        if not instance:
-            raise RuntimeError('Invalid instance')
-        return instance
+    def tower(self, name=None):
+        tower = self.last_tower() if name is None else self._towers[name]
+        if not tower:
+            raise RuntimeError('Invalid tower ' % name)
+        return tower
 
-    def last_instance(self):
-        if not self.last_instance:
-            raise RuntimeError('Loss requires a valid model instance, please build one first')
-        return self.last_instance
+    def last_tower(self):
+        if not self._last_tower:
+            raise RuntimeError('A valid model tower is required, please build one first')
+        return self._last_tower
 
     def last_scope(self):
-        return self.last_instance.name if self.last_instance else ''
+        return self._last_tower.name if self._last_tower else ''
 
     # Return scopes (strings) for logit variables to allow filtering for save/restore
+    @abc.abstractmethod
     def logit_scopes(self):
         pass
 
-    # Return list of 'get_variable' functions used by the model (used for variable scoping)
-    def get_variable_fn_list(self):
-        pass
+    # Return list of 'get/create variable' functions used by the model (used for variable scoping).
+    # Makes it easier to abstract train code from models using different variable helpers
+    def get_variable_fns(self):
+        return [tf.contrib.framework.variable]
 
     # Return a list of model variables to restore for a Saver
-    def variables_to_restore(self):
-        pass
+    def variables_to_restore(self, restore_logits=True):
+        model_variables = tf.contrib.framework.variables.get_model_variables()
+        if restore_logits:
+            return model_variables
+        else:
+            model_variable_names = [x.name for x in model_variables]
+            filtered_variables = tf.contrib.framework.variables.get_variables_to_restore(
+                model_variable_names, self.logit_scopes())
+            return filtered_variables
 
     def activation_summaries(self, name=None):
-        instance = self.instance(name)
+        tower = self.tower(name)
         with tf.name_scope('summaries'):
-            for act in instance.endpoints.values():
+            for act in tower.endpoints.values():
                 activation_summary(act, Model.TOWER_NAME)
 
     @staticmethod

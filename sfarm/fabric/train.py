@@ -27,7 +27,7 @@ import re
 import numpy as np
 import tensorflow as tf
 
-from .image_processing import *
+from .image_processing import image_preprocess
 from .feed import Feed
 
 FLAGS = tf.app.flags.FLAGS
@@ -52,7 +52,7 @@ tf.app.flags.DEFINE_boolean('fine_tune', False,
                             """of weights in order to train the network on a """
                             """new task.""")
 
-tf.app.flags.DEFINE_string('pretrained_model_checkpoint_path', '',
+tf.app.flags.DEFINE_string('pretrained_model_path', '',
                            """If specified, restore this pretrained model """
                            """before beginning any training.""")
 
@@ -102,22 +102,17 @@ def _tower_loss(images, labels, num_classes, model, scope):
     Returns:
        Tensor of shape [] containing the total loss for a batch of data
     """
-    # When fine-tuning a model, we do not restore the logits but instead we
-    # randomly initialize the logits. The number of classes in the output of the
-    # logit is the number of classes in specified Dataset.
-    restore_logits = not FLAGS.fine_tune
-
     # Build inference Graph.
-    model.build(images, num_classes, is_training=True, restore_logits=restore_logits, scope=scope)
+    model.build_tower(images, num_classes, is_training=True, scope=scope)
 
     # Build the portion of the Graph calculating the losses. Note that we will
     # assemble the total_loss using a custom function below.
     split_batch_size = images.get_shape().as_list()[0]
-    model.loss(labels, batch_size=split_batch_size)
+    assert split_batch_size == labels.get_shape()[0]  # Would this ever differ? Push inside add loss fn?
+    model.add_tower_loss(labels, batch_size=split_batch_size)
 
     # Assemble all of the losses for the current tower only.
     tower_losses = tf.contrib.losses.get_losses(scope)
-    print(tower_losses)
 
     # Calculate the total loss for the current tower.
     regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
@@ -133,7 +128,6 @@ def _tower_loss(images, labels, num_classes, model, scope):
         # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
         # session. This helps the clarity of presentation on TensorBoard.
         loss_name = re.sub('%s_[0-9]*/' % model.TOWER_NAME, '', l.op.name)
-        print(loss_name)
         # Name each loss as '(raw)' and name the moving average version of the loss
         # as the original loss name.
         tf.scalar_summary(loss_name + ' (raw)', l)
@@ -208,15 +202,14 @@ def _train_graph(dataset, model):
         staircase=True)
 
     # Create an optimizer that performs gradient descent.
-    #opt = tf.train.RMSPropOptimizer(lr, RMSPROP_DECAY,
-    #                                momentum=RMSPROP_MOMENTUM,
-    #                                epsilon=RMSPROP_EPSILON)
+    opt = tf.train.RMSPropOptimizer(
+        lr, RMSPROP_DECAY, momentum=RMSPROP_MOMENTUM, epsilon=RMSPROP_EPSILON)
 
     # opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
 
     # opt = tf.train.AdamOptimizer(lr, epsilon=.01)
 
-    opt = tf.train.MomentumOptimizer(lr, 0.9)
+    # opt = tf.train.MomentumOptimizer(lr, 0.9)
 
     # Get images and labels for ImageNet and split the batch across GPUs.
     assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
@@ -241,7 +234,7 @@ def _train_graph(dataset, model):
             with tf.name_scope(model.scope_name(i)) as scope:
                 # Force all Variables to reside on the CPU.
                 if num_gpus > 1:
-                    with tf.contrib.framework.arg_scope(model.get_variables_fn_list(), device='/cpu:0'):
+                    with tf.contrib.framework.arg_scope(model.get_variable_fns(), device='/cpu:0'):
                         # Calculate the loss for one tower of the ImageNet model. This
                         # function constructs the entire ImageNet model but shares the
                         # variables across all towers.
@@ -269,7 +262,7 @@ def _train_graph(dataset, model):
 
     # We must calculate the mean of each gradient. Note that this is the
     # synchronization point across all towers.
-    grads = _average_gradients(tower_grads)
+    grads = _average_gradients(tower_grads) if num_gpus > 1 else tower_grads[0]
 
     # Add a summaries for the input processing and global_step.
     summaries.extend(input_summaries)
@@ -319,7 +312,7 @@ def train(dataset, model):
         train_op, init_op, summary_op, tower_losses = _train_graph(dataset, model)
 
         # Create a saver.
-        saver = tf.train.Saver(tf.all_variables())
+        saver = tf.train.Saver(tf.all_variables(), max_to_keep=10)
 
         # Start running operations on the Graph. allow_soft_placement must be set to
         # True to build towers on GPU, as some of the ops do not have GPU
@@ -330,13 +323,17 @@ def train(dataset, model):
 
         sess.run(init_op)
 
-        if FLAGS.pretrained_model_checkpoint_path:
-            assert tf.gfile.Exists(FLAGS.pretrained_model_checkpoint_path)
-            variables_to_restore = model.variables_to_restore()
-            restorer = tf.train.Saver(variables_to_restore)
-            restorer.restore(sess, FLAGS.pretrained_model_checkpoint_path)
+        # When fine-tuning a model, we do not restore the logits but instead we
+        # randomly initialize the logits. The number of classes in the output of the
+        # logit is the number of classes in specified Dataset.
+        restore_logits = not FLAGS.fine_tune
+
+        if FLAGS.pretrained_model_path:
+            assert tf.gfile.Exists(FLAGS.pretrained_model_path)
+            variables_to_restore = model.variables_to_restore(restore_logits)
+            tf.train.Saver(variables_to_restore).restore(sess, FLAGS.pretrained_model_path)
             print('%s: Pre-trained model restored from %s' %
-                  (datetime.now(), FLAGS.pretrained_model_checkpoint_path))
+                  (datetime.now(), FLAGS.pretrained_model_path))
 
         # Start the queue runners.
         tf.train.start_queue_runners(sess=sess)
@@ -353,8 +350,10 @@ def train(dataset, model):
             if step % 10 == 0:
                 examples_per_sec = FLAGS.batch_size / float(duration)
                 epoch = 1 + (step * FLAGS.batch_size) // dataset.num_examples_per_epoch() 
-                format_str = '%s: step %d, epoch %d, loss = %.2f total; %.4f output (%.1f examples/sec; %.3f sec/batch)'
-                print(format_str % (datetime.now(), step, epoch, total_loss_value, output_loss_value, examples_per_sec, duration))
+                format_str = '%s: step %d, epoch %d, loss = %.2f total; ' \
+                             '%.4f output (%.1f examples/sec; %.3f sec/batch)'
+                print(format_str % (datetime.now(), step, epoch, total_loss_value,
+                                    output_loss_value, examples_per_sec, duration))
 
             if step % 100 == 0:
                 summary_str = sess.run(summary_op)

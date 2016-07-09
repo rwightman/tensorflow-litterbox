@@ -53,6 +53,7 @@ tf.app.flags.DEFINE_integer('num_examples', 0,
 tf.app.flags.DEFINE_string('subset', 'validation',
                            """Either 'validation' or 'train'.""")
 
+
 def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary_op):
     """Runs Eval once.
 
@@ -138,7 +139,7 @@ def evaluate(dataset, model):
 
         # Build a Graph that computes the logits predictions from the
         # inference model.
-        logits, _ = model.build(images, num_classes)
+        logits = model.build_tower(images, num_classes)
 
         # Calculate predictions.
         top_1_op = tf.nn.in_top_k(logits, labels, 1)
@@ -152,9 +153,7 @@ def evaluate(dataset, model):
 
         # Build the summary operation based on the TF collection of Summaries.
         summary_op = tf.merge_all_summaries()
-
-        graph_def = tf.get_default_graph().as_graph_def()
-        summary_writer = tf.train.SummaryWriter(FLAGS.eval_dir, graph_def=graph_def)
+        summary_writer = tf.train.SummaryWriter(FLAGS.eval_dir, graph=tf.get_default_graph())
 
         while True:
             _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary_op)

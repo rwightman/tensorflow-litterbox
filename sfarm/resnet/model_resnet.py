@@ -10,7 +10,7 @@ from tensorflow.python.ops import math_ops
 FLAGS = tf.app.flags.FLAGS
 
 #@layers.add_arg_scope
-def block(net, num_filters_internal, block_stride, bottleneck=True, activation_fn=tf.nn.relu):
+def block(net, num_filters_internal, block_stride, bottleneck=True, scope='block', activation_fn=tf.nn.relu):
 
     # If bottleneck, num_filters_internal*4 filters are output.
     # num_filters_internal is how many filters the 3x3 convolutions output.
@@ -18,29 +18,49 @@ def block(net, num_filters_internal, block_stride, bottleneck=True, activation_f
     num_filters_in = net.get_shape()[-1]
     num_filters_out = m * num_filters_internal
 
-    shortcut = net  # identity
+    with tf.variable_scope(scope):
+        shortcut = tf.identity(net)
 
-    if bottleneck:
-        net = layers.conv2d(net, num_filters_internal, [1, 1], stride=block_stride, scope='a')
-        net = layers.conv2d(net, num_filters_internal, [3, 3], scope='b')
-        net = layers.conv2d(net, num_filters_out, [1, 1], activation_fn=None, scope='c')
+        if bottleneck:
+            net = layers.conv2d(net, num_filters_internal, [1, 1], stride=block_stride, scope='a')
+            net = layers.conv2d(net, num_filters_internal, [3, 3], scope='b')
+            net = layers.conv2d(net, num_filters_out, [1, 1], activation_fn=None, scope='c')
+        else:
+            net = layers.conv2d(net, num_filters_internal, [3, 3], stride=block_stride, scope='A')
+            net = layers.conv2d(net, num_filters_out, [3, 3], activation_fn=None, scope='B')
+
+        if num_filters_out != num_filters_in or block_stride != 1:
+            shortcut = layers.conv2d(
+                shortcut, num_filters_out, [1, 1],
+                stride=block_stride, activation_fn=None, padding='VALID', scope='shortcut')
+
+        return activation_fn(net + shortcut)
+
+
+def stack(net, num_blocks, num_filters_internal, stack_stride=1, bottleneck=True, scope='stack'):
+    with tf.variable_scope(scope):
+        for n in range(num_blocks):
+            block_stride = stack_stride if n == 0 else 1
+            block_scope = 'block%d' % (n + 1)
+            net = block(net, num_filters_internal, block_stride, bottleneck=bottleneck, scope=block_scope)
+    return net
+
+
+def output(net, num_classes):
+    #FIXME temporary hack for model checkpoint compatibility
+    if True:
+        net = layers.avg_pool2d(net, [7, 7], scope='avg_pool')
+        net = layers.flatten(net, scope='flatten')
+        with tf.variable_scope('logits'):
+            net = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits')
+            # num_classes
     else:
-        net = layers.conv2d(net, num_filters_internal, [3, 3], stride=block_stride, scope='A')
-        net = layers.conv2d(net, num_filters_out, [3, 3], activation_fn=None, scope='B')
-
-    if num_filters_out != num_filters_in or block_stride != 1:
-        shortcut = layers.conv2d(
-            shortcut, num_filters_out, [1, 1],
-            stride=block_stride, activation_fn=None, padding='VALID', scope='shortcut')
-
-    return activation_fn(net + shortcut)
-
-
-def stack(net, num_blocks, num_filters_internal, stack_stride=1, bottleneck=True):
-    for n in range(num_blocks):
-        block_stride = stack_stride if n == 0 else 1
-        with tf.variable_scope('block%d' % (n + 1)):
-            net = block(net, num_filters_internal, block_stride, bottleneck=bottleneck)
+        with tf.variable_scope('output'):
+            net = layers.avg_pool2d(net, [7, 7])
+            net = layers.flatten(net)
+            #FIXME monitor global average pool in endpoints?
+            net = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits')
+            # num_classes
     return net
 
 
@@ -51,14 +71,12 @@ def build_resnet(
         num_blocks=[3, 4, 6, 3],
         is_training=True,
         bottleneck=True,
-        restore_logits=True,
         scope=''):
     """Blah"""
 
-    endpoints = {}
+    endpoints = {}  # A dictionary of endpoints to observe (activations, extra stats, etc)
     with tf.op_scope([inputs], scope, 'resnet'):
-        with arg_scope(
-                [layers.batch_norm, layers.dropout], is_training=is_training):
+        with arg_scope([layers.batch_norm, layers.dropout], is_training=is_training):
             with arg_scope(
                     [layers.conv2d, layers.max_pool2d, layers.avg_pool2d],
                     stride=1,
@@ -67,42 +85,25 @@ def build_resnet(
                 with tf.variable_scope('scale1'):
                     net = layers.conv2d(inputs, 64, [7, 7], stride=2)
                     net = layers.max_pool2d(net, [3, 3], stride=2)
-                    endpoints['scale1'] = net
-                    print('scale1', net.get_shape())
+                endpoints['scale1'] = net
 
-                with tf.variable_scope('scale2'):
-                    net = stack(net, num_blocks[0], 64, stack_stride=1, bottleneck=bottleneck)
-                    endpoints['scale2'] = net
-                    print('scale2', net.get_shape())
+                net = stack(net, num_blocks[0], 64, stack_stride=1, bottleneck=bottleneck, scope='scale2')
+                endpoints['scale2'] = net
 
-                with tf.variable_scope('scale3'):
-                    net = stack(net, num_blocks[1], 128, stack_stride=2, bottleneck=bottleneck)
-                    endpoints['scale3'] = net
-                    print('scale3', net.get_shape())
+                net = stack(net, num_blocks[1], 128, stack_stride=2, bottleneck=bottleneck, scope='scale3')
+                endpoints['scale3'] = net
 
-                with tf.variable_scope('scale4'):
-                    net = stack(net, num_blocks[2], 256, stack_stride=2, bottleneck=bottleneck)
-                    endpoints['scale4'] = net
-                    print('scale4', net.get_shape())
+                net = stack(net, num_blocks[2], 256, stack_stride=2, bottleneck=bottleneck, scope='scale4')
+                endpoints['scale4'] = net
 
-                with tf.variable_scope('scale5'):
-                    net = stack(net, num_blocks[3], 512, stack_stride=2, bottleneck=bottleneck)
-                    endpoints['scale5'] = net
-                    print('scale5', net.get_shape())
+                net = stack(net, num_blocks[3], 512, stack_stride=2, bottleneck=bottleneck, scope='scale5')
+                endpoints['scale5'] = net
 
-                #net = tf.reduce_mean(net, reduction_indices=[1, 2], name="avg_pool")
-                net = layers.avg_pool2d(net, [7, 7], scope='avg_pool')
-                net = layers.flatten(net, scope='flatten')
-                print('avg_pool', net.get_shape())
-                endpoints['avg_pool'] = net
+                logits = output(net, num_classes)
+                endpoints['logits'] = logits
+                endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
 
-                with tf.variable_scope('logits'):
-                    logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits') #restore=restore_logits
-                    # 1 x 1 x num_classes
-                    endpoints['logits'] = logits
-                    endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
-
-                    return logits, endpoints
+                return logits, endpoints
 
 
 class ModelResnet(model.Model):
@@ -113,18 +114,31 @@ class ModelResnet(model.Model):
     def __init__(self):
         super(ModelResnet, self).__init__()
 
-    def build(self, inputs, num_classes, variant='34', is_training=False, restore_logits=True, scope=None):
+    def build_tower(self, inputs, num_classes, num_layers=34, is_training=False, scope=None):
 
-        # [layer] config params
-        # [18]  = {{2, 2, 2, 2}, 512, basic},
-        # [34]  = {{3, 4, 6, 3}, 512, basic},
-        # [50]  = {{3, 4, 6, 3}, 2048, bottleneck},
-        # [101] = {{3, 4, 23, 3}, 2048, bottleneck},
-        # [152] = {{3, 8, 36, 3}, 2048, bottleneck},
-
-        # 34 layer config
-        bottleneck=False  # basic
-        num_blocks = [3, 4, 6, 3]
+        # layer configs
+        if num_layers == 18:
+            num_blocks = [2, 2, 2, 2]
+            bottleneck = False
+            # filter output depth = 512
+        elif num_layers == 34:
+            num_blocks = [3, 4, 6, 3]
+            bottleneck = False
+            # filter output depth = 512
+        elif num_layers == 50:
+            num_blocks = [3, 4, 6, 3]
+            bottleneck = True
+            # filter output depth 2048
+        elif num_layers == 101:
+            num_blocks = [3, 4, 23, 3]
+            bottleneck = True
+            # filter output depth 2048
+        elif num_layers == 151:
+            num_blocks = [3, 8, 36, 3]
+            bottleneck = True
+            # filter output depth 2048
+        else:
+            assert False, "invalid number of layers"
 
         batch_norm_params = {
             # Decay for the moving averages.
@@ -150,10 +164,9 @@ class ModelResnet(model.Model):
                     num_blocks=num_blocks,
                     bottleneck=bottleneck,
                     is_training=is_training,
-                    restore_logits=restore_logits,
                     scope=scope)
 
-        self.add_instance(
+        self.add_tower(
             name=scope,
             endpoints=endpoints,
             logits=logits
@@ -162,9 +175,9 @@ class ModelResnet(model.Model):
         # Add summaries for viewing model statistics on TensorBoard.
         self.activation_summaries()
 
-        return logits, None
+        return logits
 
-    def loss(self, labels, batch_size=None, scope=None):
+    def add_tower_loss(self, labels, batch_size=None, scope=None):
         """Adds all losses for the model.
 
         Note the final loss is not returned. Instead, the list of losses are collected
@@ -175,31 +188,29 @@ class ModelResnet(model.Model):
           logits: List of logits from inference(). Each entry is a 2-D float Tensor.
           labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
           batch_size: integer
+          scope: tower scope of losses to add, ie 'tower_0/', defaults to last added tower if None
         """
         if not batch_size:
             batch_size = FLAGS.batch_size
 
-        instance = self.instance(scope)
+        tower = self.tower(scope)
 
         # Reshape the labels into a dense Tensor of
         # shape [FLAGS.batch_size, num_classes].
         sparse_labels = tf.reshape(labels, [batch_size, 1])
         indices = tf.reshape(tf.range(batch_size), [batch_size, 1])
         concated = tf.concat(1, [indices, sparse_labels])
-        num_classes = instance.logits.get_shape()[-1].value
+        num_classes = tower.logits.get_shape()[-1].value
         dense_labels = tf.sparse_to_dense(concated, [batch_size, num_classes], 1.0, 0.0)
 
         # Cross entropy loss for the main softmax prediction.
-        losses.softmax_cross_entropy(instance.logits,
+        losses.softmax_cross_entropy(tower.logits,
                                      dense_labels,
                                      label_smoothing=0.1,
                                      weight=1.0)
 
-    def get_variables_fn_list(self):
-        return [tf.contrib.framework.variable]
-
-    def variables_to_restore(self):
-        return tf.contrib.framework.variables.get_model_variables()
+    def logit_scopes(self):
+        return ['outputs/logits']
 
     @staticmethod
     def loss_op(logits, labels):
