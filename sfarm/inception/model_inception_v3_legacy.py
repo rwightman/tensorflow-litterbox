@@ -16,6 +16,10 @@
 
 The Inception v3 architecture is described in http://arxiv.org/abs/1512.00567
 
+This has been adapted from the original Google version in their models repository
+to work within my framework. Scopes and losses have been switched to the tf.contrib
+equivalents but the variables and ops still use tf slim for checkpoint compat.
+
 Summary of available functions:
  inference: Compute inference on the model inputs to make a prediction
  loss: Compute the loss of the prediction with respect to the labels
@@ -30,8 +34,6 @@ import tensorflow as tf
 from fabric import model
 from slim import ops
 from slim import variables
-#from slim import scopes
-#from slim import losses
 import tensorflow.contrib.framework as cfw
 from tensorflow.contrib import losses
 from tensorflow.python.ops import math_ops

@@ -8,7 +8,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from inception import ModelInceptionV3
+from inception import ModelInception
 from resnet import ModelResnet
 from vgg import ModelVgg16
 from fabric.eval import *

@@ -7,8 +7,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-from inception import ModelInceptionV3
-from inception import ModelInceptionV4
+from inception import ModelInception
 from resnet import ModelResnet
 from vgg import ModelVgg16
 from fabric.train import *
@@ -18,9 +17,10 @@ FLAGS = tf.app.flags.FLAGS
 
 
 def main(_):
-    dataset = StateFarmData(subset=FLAGS.subset)
+    dataset = StateFarmDataFile(subset=FLAGS.subset)
     assert dataset.data_files()
-    model = ModelInceptionV4()
+    model = ModelInception(variant=ModelInception.Variant.ResnetV2)
+    #model = ModelResnet()
 
     if not tf.gfile.Exists(FLAGS.train_dir):
         tf.gfile.MakeDirs(FLAGS.train_dir)

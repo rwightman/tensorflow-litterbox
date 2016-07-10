@@ -1,46 +1,26 @@
-# Copyright 2016 Google Inc. All Rights Reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-# ==============================================================================
 """The Inception v4 network.
 """
 from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import re
 import tensorflow as tf
-
-from fabric import model
 from tensorflow.contrib.framework import arg_scope
 from tensorflow.contrib import layers
-from tensorflow.contrib import losses
-from tensorflow.python.ops import math_ops
-
-FLAGS = tf.app.flags.FLAGS
 
 
 def block_stem(net):
+    # Stem shared by inception-v4 and inception-resnet-v2 (resnet-v1 uses simpler stem below)
     # NOTE observe endpoints of first 3 layers
     endpoints = {}
     with tf.variable_scope('stem'):
         with tf.variable_scope('st0'):  # stage 0 of stem
             # 299 x 299 x 3
             net = layers.conv2d(net, 32, [3, 3], stride=2)
-            endpoints['conv0'] = net
+            endpoints['stem_conv0'] = net
             # 149 x 149 x 32
             net = layers.conv2d(net, 32, [3, 3])
-            endpoints['conv1'] = net
+            endpoints['stem_conv1'] = net
             # 147 x 147 x 32
             net = layers.conv2d(net, 64, [3, 3], padding='SAME')
             endpoints['stem0'] = net
@@ -101,19 +81,28 @@ def block_a(net, scope='block_a'):
 
 def block_reduce_a(net, k=192, l=224, m=256, n=384, scope='block_reduce_a'):
     # 35 x 35 -> 17 x 17 reduce
+    # inception-v4: k=192, l=224, m=256, n=384
+    # inception-resnet-v1: k=192, l=192, m=256, n=384
+    # inception-resnet-v2: k=256, l=256, m=384, n=384
     # default padding = VALID
     # default stride = 1
     with tf.variable_scope(scope):
         with tf.variable_scope('br0_max'):
             br0 = layers.max_pool2d(net, [3, 3], stride=2)
+            # 17 x 17 x input
         with tf.variable_scope('br1_3x3'):
             br1 = layers.conv2d(net, n, [3, 3], stride=2)
+            # 17 x 17 x n
         with tf.variable_scope('br2_1x1_3x3dbl'):
             br2 = layers.conv2d(net, k, [1, 1], padding='SAME')
             br2 = layers.conv2d(br2, l, [3, 3], padding='SAME')
             br2 = layers.conv2d(br2, m, [3, 3], stride=2)
+            # 17 x 17 x m
         net = tf.concat(3, [br0, br1, br2])
-        # 17 x 17 x input + n + m (384 + 384 + 256=1024 normally?)
+        # 17 x 17 x input + n + m
+        # 1024 for v4 (384 + 384 + 256)
+        # 896 for res-v1 (256 + 384 +256)
+        # 1152 for res-v2 (384 + 384 + 384)
     return net
 
 
@@ -186,62 +175,114 @@ def block_c(net, scope='block_c'):
     return net
 
 
-def stem_res_v1(net, scope='stem'):
-    return net
+def block_stem_res(net):
+    # Simpler stem for inception-resnet-v1 network
+    # NOTE observe endpoints of first 3 layers
+    # default padding = VALID
+    # default stride = 1
+    endpoints = {}
+    with tf.variable_scope('stem'):
+        # 299 x 299 x 3
+        net = layers.conv2d(net, 32, [3, 3], stride=2)
+        endpoints['stem_conv0'] = net
+        # 149 x 149 x 32
+        net = layers.conv2d(net, 32, [3, 3])
+        endpoints['stem_conv1'] = net
+        # 147 x 147 x 32
+        net = layers.conv2d(net, 64, [3, 3], padding='SAME')
+        endpoints['stem_conv2'] = net
+        # 147 x 147 x 64
+        net = layers.max_pool2d(net, [3, 3], stride=2)
+        # 73 x 73 x 64
+        net = layers.conv2d(net, 80, [1, 1], padding='SAME')
+        # 73 x 73 x 80
+        net = layers.conv2d(net, 192, [3, 3])
+        # 71 x 71 x 192
+        net = layers.conv2d(net, 256, [3, 3], stride=2)
+        # 35 x 35 x 256
+        endpoints['stem'] = net
+    return net, endpoints
 
 
-def block_res_a(net, scope='block_res_a', activation_fn=tf.nn.relu):
+def block_res_a(net, ver=2, res_scale=None, scope='block_res_a', activation_fn=tf.nn.relu):
     # 35x35 grid
-    with tf.variable_scope(scope):
-        shortcut = tf.identity(net)
-        with tf.variable_scope('br0_1x1'):
-            br0 = layers.conv2d(net, 32, [1, 1])
-        with tf.variable_scope('br1_1x1_3x3'):
-            br1 = layers.conv2d(net, 32, [1, 1])
-            br1 = layers.conv2d(br1, 32, [3, 3])
-        with tf.variable_scope('br1_1x1_3x3dbl'):
-            br2 = layers.conv2d(net, 32, [1, 1])
-            br2 = layers.conv2d(br2, 48, [3, 3])
-            br2 = layers.conv2d(br2, 64, [3, 3])
-        net = tf.concat(3, [br0, br1, br2])
-        net = layers.conv2d(net, 384, [1, 1], activation_fn=None)
-        net = activation_fn(tf.concat(3, [shortcut, net]))
+
+    # configure branch filter numbers
+    br2_num = 32
+    if ver == 1:
+        br2_inc = 0
+    else:
+        br2_inc = 16
+
+    # default padding = SAME
+    # default stride = 1
+    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
+        with tf.variable_scope(scope):
+            shortcut = tf.identity(net)
+            if res_scale:
+                shortcut = tf.mul(shortcut, res_scale)  # scale residual
+            with tf.variable_scope('br0_1x1'):
+                br0 = layers.conv2d(net, 32, [1, 1])
+            with tf.variable_scope('br1_1x1_3x3'):
+                br1 = layers.conv2d(net, 32, [1, 1])
+                br1 = layers.conv2d(br1, 32, [3, 3])
+            with tf.variable_scope('br1_1x1_3x3dbl'):
+                br2 = layers.conv2d(net, br2_num, [1, 1])
+                br2 = layers.conv2d(br2, br2_num + 1*br2_inc, [3, 3])
+                br2 = layers.conv2d(br2, br2_num + 2*br2_inc, [3, 3])
+            net = tf.concat(3, [br0, br1, br2])
+            net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None)
+            net = activation_fn(tf.add(shortcut, net))
+            # 35 x 35 x 256 res-v1, 384 res-v2
     return net
 
 
-def block_res_b(net, scope='block_res_b', activation_fn=tf.nn.relu):
+def block_res_b(net, ver=2, res_scale=None, scope='block_res_b', activation_fn=tf.nn.relu):
     # 17 x 17 grid
-    with tf.variable_scope(scope):
-        shortcut = tf.identity(net)
-        with tf.variable_scope('br0_1x1'):
-            br0 = layers.conv2d(net, 192, [1, 1])
-        with tf.variable_scope('br1_1x1_1x7_7x1'):
-            br1 = layers.conv2d(net, 128, [1, 1])
-            br1 = layers.conv2d(br1, 160, [1, 7])
-            br1 = layers.conv2d(br1, 192, [7, 1])
-        net = tf.concat(3, [br0, br1])
-        net = layers.conv2d(net, 1154, [1, 1], activation_fn=None)
-        net = activation_fn(tf.concat(3, [shortcut, net]))
-    return net
+
+    # configure branch filter numbers
+    if ver == 1:
+        br0_num = 128
+        br1_num = 128
+        br1_inc = 0
+    else:
+        br0_num = 192
+        br1_num = 128
+        br1_inc = 32
+
+    # default padding = SAME
+    # default stride = 1
+    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
+        with tf.variable_scope(scope):
+            shortcut = tf.identity(net)
+            if res_scale:
+                shortcut = tf.mul(shortcut, res_scale)  # scale residual
+            with tf.variable_scope('br0_1x1'):
+                br0 = layers.conv2d(net, br0_num, [1, 1])
+            with tf.variable_scope('br1_1x1_1x7_7x1'):
+                br1 = layers.conv2d(net, br1_num, [1, 1])
+                br1 = layers.conv2d(br1, br1_num + 1*br1_inc, [1, 7])
+                br1 = layers.conv2d(br1, br1_num + 2*br1_inc, [7, 1])
+            net = tf.concat(3, [br0, br1])
+            net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None)
+            # 17 x 17 x 896 res-v1, 1152 res-v2. Typo in paper, 1152, not 1154
+            net = activation_fn(tf.add(shortcut, net))
+        return net
 
 
-def block_res_c(net, scope='block_res_c', activation_fn=tf.nn.relu):
-    with tf.variable_scope(scope):
-        shortcut = tf.identity(net)
-        with tf.variable_scope('br0_1x1'):
-            br0 = layers.conv2d(net, 192, [1, 1])
-        with tf.variable_scope('br1_1x1_1x3_3x1'):
-            br1 = layers.conv2d(net, 192, [1, 1])
-            br1 = layers.conv2d(br1, 224, [1, 3])
-            br1 = layers.conv2d(br1, 256, [3, 1])
-        net = tf.concat(3, [br0, br1])
-        net = layers.conv2d(net, 2048, [1, 1], activation_fn=None)
-        net = activation_fn(tf.concat(3, [shortcut, net]))
-    return net
-
-
-def block_res_reduce_b(net, scope='block_res_reduce_b'):
+def block_res_reduce_b(net, ver=2, scope='block_res_reduce_b'):
     # 17 x 17 -> 8 x 8 reduce
+
+    # configure branch filter numbers
+    br2_num = 256
+    br3_num = 256
+    if ver == 1:
+        br2_inc = 0
+        br3_inc = 0
+    else:
+        br2_inc = 32
+        br3_inc = 32
+
     with tf.variable_scope(scope):
         with tf.variable_scope('br0_max'):
             br0 = layers.max_pool2d(net, [3, 3], stride=2)
@@ -249,15 +290,44 @@ def block_res_reduce_b(net, scope='block_res_reduce_b'):
             br1 = layers.conv2d(net, 256, [1, 1], padding='SAME')
             br1 = layers.conv2d(br1, 384, [3, 3], stride=2)
         with tf.variable_scope('br2_1x1_3x3'):
-            # 256, 288 in the paper, mistake?
-            br2 = layers.conv2d(net, 256, [1, 1], padding='SAME')
-            br2 = layers.conv2d(br1, 256, [3, 3], stride=2)
+            br2 = layers.conv2d(net, br2_num, [1, 1], padding='SAME')
+            br2 = layers.conv2d(br2, br2_num + br2_inc, [3, 3], stride=2)
         with tf.variable_scope('br3_1x1_3x3dbl'):
-            # 256, 288, 320 in the paper, mistake?
-            br3 = layers.conv2d(net, 256, [1, 1], padding='SAME')
-            br3 = layers.conv2d(br2, 256, [3, 3], padding='SAME')
-            br3 = layers.conv2d(br2, 256, [3, 3], stride=2)
+            br3 = layers.conv2d(net, br3_num, [1, 1], padding='SAME')
+            br3 = layers.conv2d(br3, br3_num + 1*br3_inc, [3, 3], padding='SAME')
+            br3 = layers.conv2d(br3, br3_num + 2*br3_inc, [3, 3], stride=2)
         net = tf.concat(3, [br0, br1, br2, br3])
+        # 8 x 8 x 1792 v1, 2144 v2 (paper indicates 2048 but only get this if we use a v1 config for this block)
+    return net
+
+
+def block_res_c(net, ver=2, res_scale=None, scope='block_res_c', activation_fn=tf.nn.relu):
+    # 8 x 8 grid
+
+    # configure branch filter numbers
+    br1_num = 192
+    if ver == 1:
+        br1_inc = 0
+    else:
+        br1_inc = 32
+
+    # default padding = SAME
+    # default stride = 1
+    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
+        with tf.variable_scope(scope):
+            shortcut = tf.identity(net)
+            if res_scale:
+                shortcut = tf.mul(shortcut, res_scale)  # scale residual
+            with tf.variable_scope('br0_1x1'):
+                br0 = layers.conv2d(net, 192, [1, 1])
+            with tf.variable_scope('br1_1x1_1x3_3x1'):
+                br1 = layers.conv2d(net, br1_num, [1, 1])
+                br1 = layers.conv2d(br1, br1_num + 1*br1_inc, [1, 3])
+                br1 = layers.conv2d(br1, br1_num + 2*br1_inc, [3, 1])
+            net = tf.concat(3, [br0, br1])
+            net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None)
+            # 1792 res-1, 2144 (2048?) res-2
+            net = activation_fn(tf.add(shortcut, net))
     return net
 
 
@@ -269,7 +339,7 @@ def block_output(net, num_classes, dropout_keep_prob=0.5, scope='output'):
         # 1 x 1 x 1536
         net = layers.dropout(net, dropout_keep_prob)
         net = layers.flatten(net)
-        #FIXME monitor global average pool in endpoints?
+        #FIXME track global average pool in endpoints?
         # 1536
         net = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits')
         # num classes
@@ -300,30 +370,36 @@ def build_inception_v4(
         with arg_scope([layers.batch_norm, layers.dropout], is_training=is_training):
             with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], 
                            stride=1, padding='VALID'):
+
                 net, stem_endpoints = block_stem(inputs)
                 endpoints.update(stem_endpoints)
-                # Inception blocks
+
                 for x in range(4):
                     block_scope = 'block_a%d' % x
-                    net = block_a(net, block_scope)
+                    net = block_a(net, scope=block_scope)
                     endpoints[block_scope] = net
                 # 35 x 35 x 384
+
                 net = block_reduce_a(net)
                 endpoints['block_reduce_a'] = net
                 # 17 x 17 x 1024
+
                 for x in range(7):
                     block_scope = 'block_b%d' % x
-                    net = block_b(net, block_scope)
+                    net = block_b(net, scope=block_scope)
                     endpoints[block_scope] = net
                 # 17 x 17 x 1024
+
                 net = block_reduce_b(net)
                 endpoints['block_reduce_b'] = net
                 # 8 x 8 x 1536
+
                 for x in range(3):
                     block_scope = 'block_c%d' % x
-                    net = block_c(net, block_scope)
+                    net = block_c(net, scope=block_scope)
                     endpoints[block_scope] = net
                 # 8 x 8 x 1536
+
                 logits = block_output(net, num_classes, dropout_keep_prob, 'output')
                 # num_classes
                 endpoints['logits'] = logits
@@ -332,116 +408,76 @@ def build_inception_v4(
                 return logits, endpoints
 
 
-class ModelInceptionV4(model.Model):
-    # If a model is trained using multiple GPUs, prefix all Op names with tower_name
-    # to differentiate the operations. Note that this prefix is removed from the
-    # names of the summaries when visualizing a model.
-    TOWER_NAME = 'tower'
+def build_inception_resnet(
+        inputs,
+        ver=2,
+        res_scale=None,
+        dropout_keep_prob=0.8,
+        num_classes=1000,
+        is_training=True,
+        scope=''):
+    """Inception v4 from http://arxiv.org/abs/
 
-    # Batch normalization. Constant governing the exponential moving average of
-    # the 'global' mean and variance for all activations.
-    BATCHNORM_MOVING_AVERAGE_DECAY = 0.9997
+    Args:
+      inputs: a tensor of size [batch_size, height, width, channels].
+      dropout_keep_prob: dropout keep_prob.
+      num_classes: number of predicted classes.
+      is_training: whether is training or not.
+      scope: Optional scope for op_scope.
 
-    # The decay to use for the moving average.
-    MOVING_AVERAGE_DECAY = 0.9999
+    Returns:
+      'logits' tensor
+      'endpoints' dict
+    """
+    # endpoints will collect relevant activations for external use, for example, summaries or losses.
+    assert ver == 1 or ver == 2
+    network_name = 'inception_resnet_v%d' % ver
+    print("Building %s" % network_name)
+    endpoints = {}
+    with tf.op_scope([inputs], scope, network_name):
+        with arg_scope([layers.batch_norm, layers.dropout], is_training=is_training):
+            with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d],
+                           stride=1, padding='VALID'):
 
-    def __init__(self):
-        super(ModelInceptionV4, self).__init__()
+                net, stem_endpoints = block_stem_res(inputs) if ver == 1 else block_stem(inputs)
+                endpoints.update(stem_endpoints)
+                print('Stem output shape: ', net.get_shape())
 
-    def build_tower(self, images, num_classes, is_training=False, scope=None):
-        """Build Inception v4 model architecture.
+                for x in range(5):
+                    block_scope = 'block_res_a%d' % x
+                    net = block_res_a(net, ver=ver, res_scale=res_scale, scope=block_scope)
+                    endpoints[block_scope] = net
+                print('Block A output shape: ', net.get_shape())
+                # 35 x 35 x 384
 
-        See here for reference:
+                k, l, m, n = (192, 192, 256, 384) if ver == 1 else (256, 256, 384, 384)
+                net = block_reduce_a(net, k=k, l=l, m=m, n=n)
+                endpoints['block_reduce_a'] = net
+                print('Block Reduce A output shape : ', net.get_shape())
+                # 17 x 17 x 896 v1, 1152 v2
 
-        Args:
-          images: Images returned from inputs() or distorted_inputs().
-          num_classes: number of classes
-          is_training: If set to `True`, build the inference model for training.
-          scope: optional prefix string identifying the ImageNet tower.
+                for x in range(10):
+                    block_scope = 'block_res_b%d' % x
+                    net = block_res_b(net, ver=ver, res_scale=res_scale, scope=block_scope)
+                    endpoints[block_scope] = net
+                print('Block B output shape: ', net.get_shape())
+                # 17 x 17 x 896 v1, 1152 v2
 
-        Returns:
-          Logits. 2-D float Tensor.
-          Auxiliary Logits. 2-D float Tensor of side-head. Used for training only.
-        """
-        # Parameters for BatchNorm.
-        batch_norm_params = {
-            # Decay for the moving averages.
-            'decay': ModelInceptionV4.BATCHNORM_MOVING_AVERAGE_DECAY,
-            # epsilon to prevent 0s in variance.
-            'epsilon': 0.001,
-        }
-        # Set weight_decay for weights in Conv and FC layers.
-        l2_regularizer = layers.l2_regularizer(0.00004)
+                net = block_res_reduce_b(net, ver=ver)
+                endpoints['block_res_reduce_b'] = net
+                print('Block Reduce B output shape: ', net.get_shape())
+                # 8 x 8 x 1792 v1, 2144 v2
 
-        with arg_scope(
-                [layers.conv2d, layers.fully_connected],
-                weights_initializer=layers.xavier_initializer(),
-                weights_regularizer=l2_regularizer):
-            with arg_scope(
-                    [layers.conv2d],
-                    activation_fn=tf.nn.relu,
-                    normalizer_fn=layers.batch_norm,
-                    normalizer_params=batch_norm_params):
-                logits, endpoints = build_inception_v4(
-                    images,
-                    dropout_keep_prob=0.8,
-                    num_classes=num_classes,
-                    is_training=is_training,
-                    scope=scope)
+                for x in range(5):
+                    block_scope = 'block_res_c%d' % x
+                    net = block_res_c(net, ver=ver, res_scale=res_scale, scope=block_scope)
+                    endpoints[block_scope] = net
+                print('Block C output shape: ', net.get_shape())
+                # 8 x 8 x 1792 v1, 2144 v2
 
-        self.add_tower(
-            scope,
-            endpoints,
-            logits
-        )
+                logits = block_output(net, num_classes, dropout_keep_prob, 'output')
+                # num_classes
+                endpoints['logits'] = logits
+                endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
 
-        # Add summaries for viewing model statistics on TensorBoard.
-        self.activation_summaries()
-
-        return logits
-
-    def add_tower_loss(self, labels, batch_size=None, scope=None):
-        """Adds all losses for the model.
-
-        Note the final loss is not returned. Instead, the list of losses are collected.
-        The losses are accumulated in tower_loss() and summed to calculate the total loss.
-
-        Args:
-          logits: List of logits from inference(). Each entry is a 2-D float Tensor.
-          labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
-          batch_size: integer
-          scope: tower scope of losses to add, ie 'tower_0/', defaults to last added tower if None
-        """
-        if not batch_size:
-            batch_size = FLAGS.batch_size
-
-        tower = self.tower(scope)
-
-        # Reshape the labels into a dense Tensor of
-        # shape [FLAGS.batch_size, num_classes].
-        sparse_labels = tf.reshape(labels, [batch_size, 1])
-        indices = tf.reshape(tf.range(batch_size), [batch_size, 1])
-        concated = tf.concat(1, [indices, sparse_labels])
-        num_classes = tower.logits.get_shape()[-1].value
-        dense_labels = tf.sparse_to_dense(concated, [batch_size, num_classes], 1.0, 0.0)
-
-        # Cross entropy loss for the main softmax prediction.
-        losses.softmax_cross_entropy(
-            tower.logits, dense_labels, label_smoothing=0.1, weight=1.0)
-
-    def logit_scopes(self):
-        return ['output/logits']
-
-    @staticmethod
-    def loss_op(logits, labels):
-        """Generate a simple (non tower based) loss op for use in evaluation.
-
-        Args:
-          logits: List of logits from inference(). Each entry is a 2-D float Tensor.
-          labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
-          batch_size: integer
-        """
-        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
-        loss = math_ops.reduce_mean(cross_entropy)
-        return loss
-
+                return logits, endpoints
