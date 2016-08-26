@@ -98,7 +98,7 @@ tf.app.flags.DEFINE_integer('num_threads', 2,
 #   flower
 # where each line corresponds to a label. We map each label contained in
 # the file to an integer corresponding to the line number starting from 0.
-tf.app.flags.DEFINE_string('labels_file.txt', '', 'Labels file')
+tf.app.flags.DEFINE_string('labels_file', 'labels_file.txt', 'Labels file')
 
 
 FLAGS = tf.app.flags.FLAGS
@@ -164,12 +164,10 @@ class ImageCoder(object):
     self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=3)
 
   def png_to_jpeg(self, image_data):
-    return self._sess.run(self._png_to_jpeg,
-                          feed_dict={self._png_data: image_data})
+    return self._sess.run(self._png_to_jpeg, feed_dict={self._png_data: image_data})
 
   def decode_jpeg(self, image_data):
-    image = self._sess.run(self._decode_jpeg,
-                           feed_dict={self._decode_jpeg_data: image_data})
+    image = self._sess.run(self._decode_jpeg, feed_dict={self._decode_jpeg_data: image_data})
     assert len(image.shape) == 3
     assert image.shape[2] == 3
     return image
@@ -277,6 +275,7 @@ def _process_image_files_batch(coder, thread_index, ranges, name, filenames,
           (datetime.now(), thread_index, shard_counter, output_file))
     sys.stdout.flush()
     shard_counter = 0
+
   print('%s [thread %d]: Wrote %d images to %d shards.' %
         (datetime.now(), thread_index, counter, num_files_in_thread))
   sys.stdout.flush()
@@ -314,8 +313,7 @@ def _process_image_files(name, filenames, texts, labels, num_shards):
 
   threads = []
   for thread_index in range(len(ranges)):
-    args = (coder, thread_index, ranges, name, filenames,
-            texts, labels, num_shards)
+    args = (coder, thread_index, ranges, name, filenames, texts, labels, num_shards)
     t = threading.Thread(target=_process_image_files_batch, args=args)
     t.start()
     threads.append(t)
@@ -358,8 +356,7 @@ def _find_image_files(data_dir, labels_file):
     labels: list of integer; each integer identifies the ground truth.
   """
   print('Determining list of input files and labels from %s.' % data_dir)
-  unique_labels = [l.strip() for l in tf.gfile.FastGFile(
-      labels_file, 'r').readlines()]
+  unique_labels = [l.strip() for l in tf.gfile.FastGFile(labels_file, 'r').readlines()]
 
   labels = []
   filenames = []
@@ -421,10 +418,8 @@ def main(unused_argv):
   print('Saving results to %s' % FLAGS.output_directory)
 
   # Run it!
-  _process_dataset('validation', FLAGS.validation_directory,
-                   FLAGS.validation_shards, FLAGS.labels_file)
-  _process_dataset('train', FLAGS.train_directory,
-                   FLAGS.train_shards, FLAGS.labels_file)
+  _process_dataset('validation', FLAGS.validation_directory, FLAGS.validation_shards, FLAGS.labels_file)
+  _process_dataset('train', FLAGS.train_directory, FLAGS.train_shards, FLAGS.labels_file)
 
 
 if __name__ == '__main__':
