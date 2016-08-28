@@ -41,8 +41,13 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import numpy as np
+import cv2
 
-IMAGENET_MEAN = [103.939, 116.779, 123.68]
+IMAGENET_MEAN_CAFFE = [103.939, 116.779, 123.68]
+IMAGENET_MEAN = [0.485, 0.456, 0.406]
+IMAGENET_STD = [0.229, 0.224, 0.225]
+
 
 def decode_jpeg(image_buffer, depth=3, scope=None):
     """Decode a JPEG string into one 3-D float image Tensor.
@@ -101,7 +106,52 @@ def distort_color(image, thread_id=0, scope=None):
         return image
 
 
-def distort_image(image, height, width, bbox=None, flip=False, thread_id=0, scope=None):
+def distort_affine(image, alpha_affine=10, random_state=None):
+    if random_state is None:
+        random_state = np.random.RandomState(None)
+
+    shape = image.shape
+    shape_size = shape[:2]
+
+    center_square = np.float32(shape_size) // 2
+    square_size = min(shape_size) // 3
+    pts1 = np.float32([
+        center_square + square_size,
+        [center_square[0] + square_size, center_square[1] - square_size],
+        center_square - square_size])
+    pts2 = pts1 + random_state.uniform(-alpha_affine, alpha_affine, size=pts1.shape).astype(np.float32)
+
+    M = cv2.getAffineTransform(pts1, pts2)
+    distorted_image = cv2.warpAffine(image, M, shape_size[::-1], borderMode=cv2.BORDER_REFLECT_101)
+
+    return distorted_image
+
+
+def distort_elastic(image, alpha=100, sigma=20, random_state=None):
+    """Elastic deformation of images as per [Simard2003].
+    """
+    if random_state is None:
+        random_state = np.random.RandomState(None)
+
+    shape_size = image.shape[:2]
+    blur_size = int(4 * sigma) | 1
+    rand_x = cv2.GaussianBlur(
+        (random_state.rand(*shape_size) * 2 - 1).astype(np.float32),
+        ksize=(blur_size, blur_size), sigmaX=sigma) * alpha
+    rand_y = cv2.GaussianBlur(
+        (random_state.rand(*shape_size) * 2 - 1).astype(np.float32),
+        ksize=(blur_size, blur_size), sigmaX=sigma) * alpha
+
+    grid_x, grid_y = np.meshgrid(np.arange(shape_size[1]), np.arange(shape_size[0]))
+    grid_x = (grid_x + rand_x).astype(np.float32)
+    grid_y = (grid_y + rand_y).astype(np.float32)
+
+    distorted_img = cv2.remap(image, grid_x, grid_y, borderMode=cv2.BORDER_REFLECT_101, interpolation=cv2.INTER_LINEAR)
+
+    return distorted_img
+
+
+def distort_image(image, height, width, bbox=None, thread_id=0, scope=None):
     """Distort one image for training a network.
 
     Distorting images provides a useful technique for augmenting the data
@@ -120,6 +170,11 @@ def distort_image(image, height, width, bbox=None, flip=False, thread_id=0, scop
     Returns:
       3-D float Tensor of distorted image used for training.
     """
+    h_flip = True  # FIXME make distortion configuration
+    v_flip = False
+    elastic_distortion = True
+    affine_distortion = True
+
     with tf.op_scope([image, height, width, bbox], scope, 'distort_image'):
         # Each bounding box has shape [1, num_boxes, box coords] and
         # the coordinates are ordered [ymin, xmin, ymax, xmax].
@@ -140,33 +195,44 @@ def distort_image(image, height, width, bbox=None, flip=False, thread_id=0, scop
             tf.shape(image),
             bounding_boxes=bbox,
             min_object_covered=0.1,
-            aspect_ratio_range=[0.75, 1.33],
-            area_range=[0.25, 1.0],
+            aspect_ratio_range=[0.67, 1.33],
+            area_range=[0.1, 1.0],
             max_attempts=100,
             use_image_if_no_bounding_boxes=True)
         bbox_begin, bbox_size, distort_bbox = sample_distorted_bounding_box
+
         if not thread_id:
             image_with_distorted_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), distort_bbox)
             tf.image_summary('images_with_distorted_bounding_box', image_with_distorted_box)
 
+        if affine_distortion:
+            distorted_image = tf.py_func(distort_affine, [image], [tf.float32])[0]
+            distorted_image.set_shape([height, width, 3])
+
         # Crop the image to the specified bounding box.
-        distorted_image = tf.slice(image, bbox_begin, bbox_size)
+        distorted_image = tf.slice(distorted_image, bbox_begin, bbox_size)
 
         # This resizing operation may distort the images because the aspect
-        # ratio is not respected. We select a resize method in a round robin
-        # fashion based on the thread number.
-        # Note that ResizeMethod contains 4 enumerated resizing methods.
-        resize_method = thread_id % 4
+        # ratio is not respected.
+        resize_method = tf.image.ResizeMethod.BILINEAR
         distorted_image = tf.image.resize_images(distorted_image, height, width, resize_method)
         # Restore the shape since the dynamic slice based upon the bbox_size loses
         # the third dimension.
         distorted_image.set_shape([height, width, 3])
+
         if not thread_id:
             tf.image_summary('cropped_resized_image', tf.expand_dims(distorted_image, 0))
 
+        if elastic_distortion:
+            distorted_image = tf.py_func(distort_elastic, [distorted_image], [tf.float32])[0]
+            distorted_image.set_shape([height, width, 3])
+
         # Randomly flip the image horizontally.
-        if flip:
+        if h_flip:
             distorted_image = tf.image.random_flip_left_right(distorted_image)
+
+        if v_flip:
+            distorted_image = tf.image.random_flip_up_down(distorted_image)
 
         # Randomly distort the colors.
         distorted_image = distort_color(distorted_image, thread_id)
@@ -189,14 +255,14 @@ def eval_image(image, height, width, scope=None):
       3-D float Tensor of prepared image.
     """
     with tf.op_scope([image, height, width], scope, 'eval_image'):
-        # Crop the central region of the image with an area containing 87.5% of
-        # the original image.
-        image = tf.image.central_crop(image, central_fraction=0.875)
+        # Crop the central region of the image
+        image = tf.image.central_crop(image, central_fraction=0.975)
 
-        # Resize the image to the original height and width.
+        # Resize the image to the network height and width.
         image = tf.expand_dims(image, 0)
         image = tf.image.resize_bilinear(image, [height, width], align_corners=False)
         image = tf.squeeze(image, [0])
+
         return image
 
 
@@ -240,8 +306,11 @@ def image_preprocess(image_buffer, height, width, bbox=None, caffe_fmt=False, tr
             red - IMAGENET_MEAN[2],
             ])
     else:
-        # Rescale to [-1,1] instead of [0, 1)
-        image = tf.sub(image, 0.5)
-        image = tf.mul(image, 2.0)
+        image = tf.sub(image, IMAGENET_MEAN)
+        image = tf.div(image, IMAGENET_STD)
+    #else:
+    #    # Rescale to [-1,1] instead of [0, 1)
+    #    image = tf.sub(image, 0.5)
+    #    image = tf.mul(image, 2.0)
 
     return image

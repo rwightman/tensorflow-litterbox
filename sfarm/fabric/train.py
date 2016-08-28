@@ -66,13 +66,13 @@ tf.app.flags.DEFINE_string('pretrained_model_path', '',
 # With 8 Tesla K40's and a batch size = 256, the following setup achieves
 # precision@1 = 73.5% after 100 hours and 100K steps (20 epochs).
 # Learning rate decay factor selected from http://arxiv.org/abs/1404.5997.
-tf.app.flags.DEFINE_float('initial_learning_rate', 0.1,
+tf.app.flags.DEFINE_float('learning_rate', 0.1,
                           """Initial learning rate.""")
 
-tf.app.flags.DEFINE_float('num_epochs_per_decay', 10.0,
+tf.app.flags.DEFINE_float('num_epochs_per_decay', 25.0,
                           """Epochs after which learning rate decays.""")
 
-tf.app.flags.DEFINE_float('learning_rate_decay_factor', 0.8,
+tf.app.flags.DEFINE_float('learning_rate_decay_factor', 0.2,
                           """Learning rate decay factor.""")
 
 tf.app.flags.DEFINE_string('subset', 'train',
@@ -84,7 +84,7 @@ RMSPROP_MOMENTUM = 0.9  # Momentum in RMSProp.
 RMSPROP_EPSILON = 1.0  # Epsilon term for RMSProp.
 
 
-def _tower_loss(images, labels, num_classes, model, scope):
+def _add_tower_loss(images, labels, num_classes, model, scope):
     """Calculate the total loss on a single tower running the ImageNet model.
 
     We perform 'batch splitting'. This means that we cut up a batch across
@@ -179,15 +179,7 @@ def _average_gradients(tower_grads):
     return average_grads
 
 
-def _train_graph(dataset, model):
-    # Override the number of preprocessing threads to account for the increased
-    # number of GPU towers.
-    num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus
-    feed = Feed(
-        dataset, image_preprocess,
-        batch_size=FLAGS.batch_size,
-        num_preprocess_threads=num_preprocess_threads)
-
+def _build_train_graph(feed, model):
     global_step = tf.contrib.framework.get_or_create_global_step()
 
     # Calculate the learning rate schedule.
@@ -195,7 +187,7 @@ def _train_graph(dataset, model):
 
     # Decay the learning rate exponentially based on the number of steps.
     lr = tf.train.exponential_decay(
-        FLAGS.initial_learning_rate,
+        FLAGS.learning_rate,
         global_step,
         decay_steps,
         FLAGS.learning_rate_decay_factor,
@@ -219,8 +211,8 @@ def _train_graph(dataset, model):
     input_summaries = copy.copy(tf.get_collection(tf.GraphKeys.SUMMARIES))
 
     # Number of classes in the Dataset label set plus 1.
-    # Label 0 is reserved for an (unused) background class if specified by dataset
-    num_classes = dataset.num_classes_with_background()
+    # Label 0 is reserved for an (unused) background class if specified by feed/dataset
+    num_classes = feed.num_classes(with_background=True)
 
     num_gpus = FLAGS.num_gpus
     # Split the batch of images and labels for towers.
@@ -238,12 +230,12 @@ def _train_graph(dataset, model):
                         # Calculate the loss for one tower of the ImageNet model. This
                         # function constructs the entire ImageNet model but shares the
                         # variables across all towers.
-                        tower_losses = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
+                        tower_losses = _add_tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
 
                     # Reuse variables for the next tower.
                     tf.get_variable_scope().reuse_variables()
                 else:
-                    tower_losses = _tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
+                    tower_losses = _add_tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
 
                 # Calculate the gradients for the batch of data on this ImageNet tower.
                 grads = opt.compute_gradients(tower_losses[0])
@@ -309,7 +301,16 @@ def train(dataset, model):
     """Train on dataset for a number of steps."""
     with tf.Graph().as_default(), tf.device('/cpu:0'):
 
-        train_op, init_op, summary_op, tower_losses = _train_graph(dataset, model)
+        # Override the number of preprocessing threads to account for the increased
+        # number of GPU towers.
+        num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus
+        feed = Feed(
+            dataset,
+            image_preprocess,
+            batch_size=FLAGS.batch_size,
+            num_preprocess_threads=num_preprocess_threads)
+
+        train_op, init_op, summary_op, tower_losses = _build_train_graph(feed, model)
 
         # Create a saver.
         saver = tf.train.Saver(tf.all_variables(), max_to_keep=10)
@@ -321,6 +322,8 @@ def train(dataset, model):
             allow_soft_placement=True,
             log_device_placement=FLAGS.log_device_placement))
 
+        tf.train.write_graph(sess.graph_def, FLAGS.train_dir, 'network.pb.txt', as_text=True)
+
         sess.run(init_op)
 
         # When fine-tuning a model, we do not restore the logits but instead we
@@ -331,7 +334,11 @@ def train(dataset, model):
         if FLAGS.pretrained_model_path:
             assert tf.gfile.Exists(FLAGS.pretrained_model_path)
             variables_to_restore = model.variables_to_restore(restore_logits)
-            tf.train.Saver(variables_to_restore).restore(sess, FLAGS.pretrained_model_path)
+            if tf.gfile.IsDirectory(FLAGS.pretrained_model_path):
+                model_path = tf.train.latest_checkpoint(FLAGS.pretrained_model_path)
+            else:
+                model_path = FLAGS.pretrained_model_path
+            tf.train.Saver(variables_to_restore).restore(sess, model_path)
             print('%s: Pre-trained model restored from %s' %
                   (datetime.now(), FLAGS.pretrained_model_path))
 

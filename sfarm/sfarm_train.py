@@ -17,10 +17,10 @@ FLAGS = tf.app.flags.FLAGS
 
 
 def main(_):
-    dataset = StateFarmDataFile(subset=FLAGS.subset)
+    dataset = StateFarmData(subset=FLAGS.subset)
     assert dataset.data_files()
-    model = ModelInception(variant=ModelInception.Variant.ResnetV2)
-    #model = ModelResnet()
+    #model = ModelInception(variant=ModelInception.Variant.ResnetV2)
+    model = ModelResnet(num_layers=18, width_factor=1)
 
     if not tf.gfile.Exists(FLAGS.train_dir):
         tf.gfile.MakeDirs(FLAGS.train_dir)

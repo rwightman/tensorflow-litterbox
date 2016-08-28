@@ -4,15 +4,17 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import math
 
 from .parse_proto_imagenet import parse_imagenet_proto
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_integer('batch_size', 16,
+tf.app.flags.DEFINE_integer('batch_size', 32,
                             """Number of images to process in a batch.""")
 tf.app.flags.DEFINE_integer('image_size', 299,
                             """Provide square images of this size.""")
+tf.app.flags.DEFINE_float('image_aspect', 0.0, """Aspect ratio based sizing, square image_size*image_size if 0""")
 tf.app.flags.DEFINE_string('image_fmt', 'default',
                             """Either 'default' RGB [-1,1] or 'caffe' BGR [0,255]""")
 tf.app.flags.DEFINE_integer('num_preprocess_threads', 4,
@@ -31,7 +33,7 @@ tf.app.flags.DEFINE_integer('num_readers', 4,
 # of 1024*16 images. Assuming RGB 299x299 images, this implies a queue size of
 # 16GB. If the machine is memory limited, then decrease this factor to
 # decrease the CPU memory footprint, accordingly.
-tf.app.flags.DEFINE_integer('input_queue_memory_factor', 16,
+tf.app.flags.DEFINE_integer('input_queue_memory_factor', 8,
                             """Size of the queue of preprocessed images. """
                             """Default is ideal but try smaller values, e.g. """
                             """4, 2 or 1, if host memory is constrained. See """
@@ -65,8 +67,17 @@ class Feed(object):
         if self.num_readers < 1:
             raise ValueError('Please make num_readers at least 1')
 
-        self.height = FLAGS.image_size
-        self.width = FLAGS.image_size
+        # For aspect based image size, short edge set to FLAGS.image_size
+        if FLAGS.image_aspect == 0.0:
+            self.width = FLAGS.image_size
+            self.height = FLAGS.image_size
+        elif FLAGS.image_aspect > 1.0:
+            self.width = math.ceil(FLAGS.image_size * FLAGS.image_aspect)
+            self.height = FLAGS.image_size
+        else:
+            self.width = FLAGS.image_size
+            self.height = math.ceil(FLAGS.image_size / FLAGS.image_aspect)
+
         self.depth = 3
         self.caffe_fmt = True if FLAGS.image_fmt == 'caffe' else False
 
@@ -76,6 +87,10 @@ class Feed(object):
     def num_examples_per_epoch(self):
         return self.dataset.num_examples_per_epoch()
 
+    def num_classes(self, with_background=False):
+        return self.dataset.num_classes_with_background() if with_background \
+            else self.dataset.num_classes()
+
     def inputs(self):
         """Generate batches of images for evaluation.
         See _batch_inputs.
@@ -83,9 +98,9 @@ class Feed(object):
         # Force all input processing onto CPU in order to reserve the GPU for
         # the forward inference and back-propagation.
         with tf.device('/cpu:0'):
-            images, labels, filenames = self._batch_inputs(train=False)
+            images, labels, names = self._batch_inputs(train=False)
 
-        return images, labels, filenames
+        return images, labels, names
 
     def distorted_inputs(self):
         """Generate batches of distorted images for training.
@@ -94,9 +109,9 @@ class Feed(object):
         # Force all input processing onto CPU in order to reserve the GPU for
         # the forward inference and back-propagation.
         with tf.device('/cpu:0'):
-            images, labels, filenames = self._batch_inputs(train=True)
+            images, labels, names = self._batch_inputs(train=True)
 
-        return images, labels, filenames
+        return images, labels, names
 
     def _batch_inputs(self, train=False):
         """Construct batches of training or evaluation examples from the image dataset.
@@ -108,8 +123,7 @@ class Feed(object):
             None defaults to FLAGS.num_preprocess_threads.
 
         Returns:
-          images: Images. 4D tensor of size [batch_size, FLAGS.image_size,
-                                             image_size, 3].
+          images: Images. 4D tensor of size [batch_size, FLAGS.image_size, image_size, 3].
           labels: 1-D integer Tensor of [FLAGS.batch_size].
         """
         with tf.name_scope('batch_processing'):
@@ -117,7 +131,7 @@ class Feed(object):
             inputs = self._batch_inputs_record(train) if self.dataset.is_record \
                 else self._batch_inputs_file(train)
 
-            images, label_index_batch, filename_batch = tf.train.batch_join(
+            images, label_batch, name_batch = tf.train.batch_join(
                 inputs,
                 batch_size=self.batch_size,
                 capacity=2 * self.num_preprocess_threads * self.batch_size)
@@ -126,11 +140,11 @@ class Feed(object):
             images = tf.reshape(images, shape=[self.batch_size, self.height, self.width, self.depth])
 
             # Display the training images in the visualizer.
-            tf.image_summary('images', images)
+            # tf.image_summary('images', images)
 
             return images, \
-                   tf.reshape(label_index_batch, [self.batch_size]), \
-                   tf.reshape(filename_batch, [self.batch_size])
+                   tf.reshape(label_batch, [self.batch_size]), \
+                   tf.reshape(name_batch, [self.batch_size])
 
     def _batch_inputs_record(self, train):
         """Construct batches of training or evaluation examples from the image dataset.
@@ -156,13 +170,11 @@ class Feed(object):
 
         # Create filename_queue
         if train:
-            filename_queue = tf.train.string_input_producer(data_files,
-                                                            shuffle=True,
-                                                            capacity=16)
+            filename_queue = tf.train.string_input_producer(
+                data_files, shuffle=True, capacity=16)
         else:
-            filename_queue = tf.train.string_input_producer(data_files,
-                                                            shuffle=False,
-                                                            capacity=1)
+            filename_queue = tf.train.string_input_producer(
+                data_files, shuffle=False, capacity=1)
 
         # Approximate number of examples per shard.
         examples_per_shard = 1024
@@ -174,12 +186,12 @@ class Feed(object):
         min_queue_examples = examples_per_shard * FLAGS.input_queue_memory_factor
         if train:
             examples_queue = tf.RandomShuffleQueue(
-                capacity=min_queue_examples + 3 * self.batch_size,
+                capacity=min_queue_examples + 4 * self.batch_size,
                 min_after_dequeue=min_queue_examples,
                 dtypes=[tf.string])
         else:
             examples_queue = tf.FIFOQueue(
-                capacity=examples_per_shard + 3 * self.batch_size,
+                capacity=examples_per_shard + 4 * self.batch_size,
                 dtypes=[tf.string])
 
         # Create multiple readers to populate the queue of examples.
@@ -199,13 +211,12 @@ class Feed(object):
         inputs = []
         for thread_id in range(self.num_preprocess_threads):
             # Parse a serialized Example proto to extract the image and metadata.
-            image_buffer, label_index, bbox, _, filename = self.proto_parser(example_serialized)
+            image_buffer, label_index, bbox, _, name = self.proto_parser(example_serialized)
             image = self.image_preprocess(
                 image_buffer, self.height, self.width, bbox, self.caffe_fmt, train, thread_id)
-            inputs.append([image, label_index, filename])
+            inputs.append([image, label_index, name])
 
         return inputs
-
 
     def _batch_inputs_file(self, train):
         """Construct batches of training or evaluation examples from the image dataset.
@@ -240,7 +251,7 @@ class Feed(object):
         capacity = min_after_dequeue + 3 * self.batch_size
         input_queue = tf.train.slice_input_producer(
             [filename_tensor, label_tensor],
-            #num_epochs=self.dataset.num_examples_per_epoch(),
+            num_epochs=1 if train else None,
             shuffle=train,
             capacity=capacity)
 

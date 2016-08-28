@@ -1,6 +1,7 @@
 from .build_resnet import build_resnet
 
-from fabric import model
+import fabric
+import layers as my_layers
 
 import tensorflow as tf
 from tensorflow.contrib.framework import arg_scope
@@ -11,41 +12,48 @@ from tensorflow.python.ops import math_ops
 FLAGS = tf.app.flags.FLAGS
 
 
-class ModelResnet(model.Model):
+class ModelResnet(fabric.Model):
 
     # The decay to use for the moving average.
     MOVING_AVERAGE_DECAY = 0.9999
 
-    def __init__(self):
+    def __init__(self, num_layers=34, width_factor=1):
         super(ModelResnet, self).__init__()
+        self.num_layers = num_layers
+        self.width_factor = width_factor
 
-    def build_tower(self, inputs, num_classes, num_layers=34, is_training=False, scope=None):
+    def build_tower(self, inputs, num_classes, is_training=False, scope=None):
 
         # layer configs
-        if num_layers == 18:
+        if self.num_layers == 16:
+            num_blocks = [1, 2, 3, 1]
+            bottleneck = False
+            # filter output depth = 512
+        elif self.num_layers == 18:
             num_blocks = [2, 2, 2, 2]
             bottleneck = False
             # filter output depth = 512
-        elif num_layers == 34:
+        elif self.num_layers == 34:
             num_blocks = [3, 4, 6, 3]
             bottleneck = False
             # filter output depth = 512
-        elif num_layers == 50:
+        elif self.num_layers == 50:
             num_blocks = [3, 4, 6, 3]
             bottleneck = True
             # filter output depth 2048
-        elif num_layers == 101:
+        elif self.num_layers == 101:
             num_blocks = [3, 4, 23, 3]
             bottleneck = True
             # filter output depth 2048
-        elif num_layers == 151:
+        elif self.num_layers == 151:
             num_blocks = [3, 8, 36, 3]
             bottleneck = True
             # filter output depth 2048
         else:
-            assert False, "invalid number of layers"
+            assert False, "Invalid number of layers"
 
-        k = 1  # width factor
+        k = self.width_factor
+        pre_activation = True
 
         batch_norm_params = {
             # Decay for the moving averages.
@@ -55,24 +63,25 @@ class ModelResnet(model.Model):
         }
         l2_regularizer = layers.l2_regularizer(0.0004)
 
-        with arg_scope(
-                [layers.conv2d, layers.fully_connected],
-                weights_initializer=layers.variance_scaling_initializer(),
-                weights_regularizer=l2_regularizer,
-                activation_fn=tf.nn.relu):
-            with arg_scope(
-                    [layers.conv2d],
-                    normalizer_fn=layers.batch_norm,
-                    normalizer_params=batch_norm_params):
-
-                logits, endpoints = build_resnet(
-                    inputs,
-                    k=k,
-                    num_classes=num_classes,
-                    num_blocks=num_blocks,
-                    bottleneck=bottleneck,
-                    is_training=is_training,
-                    scope=scope)
+        arg_scope_layers = arg_scope(
+            [layers.conv2d, my_layers.preact_conv2d, layers.fully_connected],
+            weights_initializer=layers.variance_scaling_initializer(),
+            weights_regularizer=l2_regularizer,
+            activation_fn=tf.nn.relu)
+        arg_scope_conv = arg_scope(
+            [layers.conv2d, my_layers.preact_conv2d],
+            normalizer_fn=layers.batch_norm,
+            normalizer_params=batch_norm_params)
+        with arg_scope_layers, arg_scope_conv:
+            logits, endpoints = build_resnet(
+                inputs,
+                k=k,
+                pre_activation=pre_activation,
+                num_classes=num_classes,
+                num_blocks=num_blocks,
+                bottleneck=bottleneck,
+                is_training=is_training,
+                scope=scope)
 
         self.add_tower(
             name=scope,
@@ -116,7 +125,7 @@ class ModelResnet(model.Model):
             tower.logits, dense_labels, label_smoothing=0.1, weight=1.0)
 
     def logit_scopes(self):
-        return ['outputs/logits']
+        return ['Outputs/Logits']
 
     @staticmethod
     def loss_op(logits, labels):

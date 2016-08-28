@@ -129,13 +129,13 @@ def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary
 def evaluate(dataset, model):
     """Evaluate model on Dataset for a number of steps."""
     with tf.Graph().as_default():
-        # Get images and labels from the dataset.
-        feed = Feed(dataset, image_preprocess, batch_size=FLAGS.batch_size)
-        images, labels, _ = feed.inputs()
-
         # Number of classes in the Dataset label set plus 1.
         # Label 0 is reserved for an (unused) background class.
         num_classes = dataset.num_classes_with_background()
+
+        # Get images and labels from the dataset.
+        feed = Feed(dataset, image_preprocess, batch_size=FLAGS.batch_size)
+        images, labels, _ = feed.inputs()
 
         # Build a Graph that computes the logits predictions from the
         # inference model.

@@ -35,6 +35,7 @@ from .dataset import Dataset
 
 FLAGS = tf.app.flags.FLAGS
 
+
 def get_image_files_and_labels(folder, types=('.jpg', '.jpeg')):
     label_counts = Counter()
     labels = []
@@ -79,7 +80,7 @@ class DatasetFile(Dataset):
 
     def available_subsets(self):
         """Returns the list of available subsets."""
-        return ['train', 'validations', 'test', '']
+        return ['train', 'validation', 'test', '']
 
     def data_files(self):
         """Returns a python list of all data files.

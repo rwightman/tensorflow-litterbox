@@ -40,25 +40,6 @@ class DatasetRecord(Dataset):
   def __init__(self, name, subset):
     super(DatasetRecord, self).__init__(name, subset, is_record=True)
 
-  @abstractmethod
-  def num_classes(self):
-    """Returns the number of classes in the data set."""
-    pass
-    # return 10
-
-  @abstractmethod
-  def num_examples_per_epoch(self):
-    """Returns the number of examples in the data subset."""
-    pass
-    # if self.subset == 'train':
-    #   return 10000
-    # if self.subset == 'validation':
-    #   return 1000
-
-  def available_subsets(self):
-    """Returns the list of available subsets."""
-    return ['train', 'validation']
-
   def data_files(self):
     """Returns a python list of all (sharded) data subset files.
 

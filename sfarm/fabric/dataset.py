@@ -51,25 +51,19 @@ class Dataset(object):
     @abstractmethod
     def num_classes(self):
         """Returns the number of classes in the data set."""
-        pass
-        # return 10
+        return 0
 
     def num_classes_with_background(self):
-        inc = 1 if self.has_background_class else 0
-        return self.num_classes() + inc
+        return self.num_classes() + 1 if self.has_background_class else self.num_classes()
+
+    def available_subsets(self):
+        """Returns the list of available subsets."""
+        return ['train', 'validation']
 
     @abstractmethod
     def num_examples_per_epoch(self):
         """Returns the number of examples in the data subset."""
         pass
-        # if self.subset == 'train':
-        #   return 10000
-        # if self.subset == 'validation':
-        #   return 1000
-
-    def available_subsets(self):
-        """Returns the list of available subsets."""
-        return ['train', 'validation']
 
     @abstractmethod
     def data_files(self):

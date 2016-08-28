@@ -15,6 +15,163 @@ from tensorflow.contrib.framework import arg_scope
 from tensorflow.contrib import layers
 
 
+def block_stem(inputs, endpoints):
+    with arg_scope(
+            [layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='VALID'):
+        # 299 x 299 x 3
+        endpoints['Conv1'] = layers.conv2d(inputs, 32, [3, 3], stride=2, scope='Conv1')
+        # 149 x 149 x 32
+        endpoints['Conv2'] = layers.conv2d(endpoints['Conv1'], 32, [3, 3], scope='Conv2')
+        # 147 x 147 x 32
+        endpoints['Conv3'] = layers.conv2d(endpoints['Conv2'], 64, [3, 3], padding='SAME', scope='Conv3')
+        # 147 x 147 x 64
+        endpoints['Pool1'] = layers.max_pool2d(endpoints['Conv3'], [3, 3], stride=2, scope='Pool1')
+        # 73 x 73 x 64
+        endpoints['Conv4'] = layers.conv2d(endpoints['Pool1'], 80, [1, 1], scope='Conv4')
+        # 73 x 73 x 80.
+        endpoints['Conv5'] = layers.conv2d(endpoints['Conv4'], 192, [3, 3], scope='Conv5')
+        # 71 x 71 x 192.
+        net = layers.max_pool2d(endpoints['Conv5'], [3, 3], stride=2, scope='Pool2')
+        # 35 x 35 x 192.
+        endpoints['Pool2'] = net
+        return net
+
+
+def block_a(net, endpoints, k=32, scope='BlockA'):
+    with tf.variable_scope(scope):
+        with tf.variable_scope('Br1_1x1'):
+            branch1x1 = layers.conv2d(net, 64, [1, 1], scope='Conv1')
+        with tf.variable_scope('Br2_5x5'):
+            branch5x5 = layers.conv2d(net, 48, [1, 1], scope='Conv1')
+            branch5x5 = layers.conv2d(branch5x5, 64, [5, 5], scope='Conv2')
+        with tf.variable_scope('Br3_3x3Dbl'):
+            branch3x3dbl = layers.conv2d(net, 64, [1, 1], scope='Conv1')
+            branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3], scope='Conv2')
+            branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3], scope='Conv3')
+        with tf.variable_scope('Br4_Pool'):
+            branch_pool = layers.avg_pool2d(net, [3, 3], scope='Pool1')
+            branch_pool = layers.conv2d(branch_pool, k, [1, 1], scope='Conv1')
+        net = tf.concat(3, [branch1x1, branch5x5, branch3x3dbl, branch_pool])
+        endpoints[scope] = net
+    return net
+
+
+def block_a_reduce(net, endpoints, scope='BlockReduceA'):
+    with tf.variable_scope('mixed_17x17x768a'):
+        with tf.variable_scope('Br1_3x3'):
+            branch3x3 = layers.conv2d(net, 384, [3, 3], stride=2, padding='VALID', scope='Conv1')
+        with tf.variable_scope('Br2_3x3Dbl'):
+            branch3x3dbl = layers.conv2d(net, 64, [1, 1], scope='Conv1')
+            branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3], scope='Conv2')
+            branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3], stride=2, padding='VALID', scope='Conv3')
+        with tf.variable_scope('Br3_Pool'):
+            branch_pool = layers.max_pool2d(net, [3, 3], stride=2, padding='VALID', scope='Conv1')
+        net = tf.concat(3, [branch3x3, branch3x3dbl, branch_pool])
+        endpoints['mixed_17x17x768a'] = net
+    return net
+
+
+def block_b(net, endpoints, k=128, scope='BlockB'):
+    with tf.variable_scope(scope):
+        with tf.variable_scope('Br1x1'):
+            branch1x1 = layers.conv2d(net, 192, [1, 1])
+        with tf.variable_scope('Br7x7'):
+            branch7x7 = layers.conv2d(net, k, [1, 1])
+            branch7x7 = layers.conv2d(branch7x7, k, [1, 7])
+            branch7x7 = layers.conv2d(branch7x7, 192, [7, 1])
+        with tf.variable_scope('Br7x7Dbl'):
+            branch7x7dbl = layers.conv2d(net, k, [1, 1])
+            branch7x7dbl = layers.conv2d(branch7x7dbl, k, [7, 1])
+            branch7x7dbl = layers.conv2d(branch7x7dbl, k, [1, 7])
+            branch7x7dbl = layers.conv2d(branch7x7dbl, k, [7, 1])
+            branch7x7dbl = layers.conv2d(branch7x7dbl, 192, [1, 7])
+        with tf.variable_scope('BrPool'):
+            branch_pool = layers.avg_pool2d(net, [3, 3])
+            branch_pool = layers.conv2d(branch_pool, 192, [1, 1])
+        net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
+        endpoints[scope] = net
+    return net
+
+
+def block_b_reduce(net, endpoints, scope='BlockReduceB'):
+    with tf.variable_scope(scope):
+        with tf.variable_scope('Br1_3x3'):
+            branch3x3 = layers.conv2d(net, 192, [1, 1])
+            branch3x3 = layers.conv2d(branch3x3, 320, [3, 3], stride=2, padding='VALID')
+        with tf.variable_scope('Br2_7x7x3'):
+            branch7x7x3 = layers.conv2d(net, 192, [1, 1])
+            branch7x7x3 = layers.conv2d(branch7x7x3, 192, [1, 7])
+            branch7x7x3 = layers.conv2d(branch7x7x3, 192, [7, 1])
+            branch7x7x3 = layers.conv2d(branch7x7x3, 192, [3, 3], stride=2, padding='VALID')
+        with tf.variable_scope('Br3_Pool'):
+            branch_pool = layers.max_pool2d(net, [3, 3], stride=2, padding='VALID')
+        net = tf.concat(3, [branch3x3, branch7x7x3, branch_pool])
+        endpoints[scope] = net
+        return net
+
+
+def block_aux(net, endpoints, num_classes):
+    with tf.variable_scope('Aux'):
+        aux_logits = layers.avg_pool2d(net, [5, 5], stride=3, padding='VALID', scope='Pool1')
+        aux_logits = layers.conv2d(aux_logits, 128, [1, 1], scope='Conv1')
+        # Shape of feature map before the final layer.
+        shape = aux_logits.get_shape()
+        #stddev=0.01,
+        aux_logits = layers.conv2d(aux_logits, 768, shape[1:3], padding='VALID', scope='Conv2')
+        aux_logits = layers.flatten(aux_logits)
+        #stddev=0.001
+        aux_logits = layers.fully_connected(aux_logits, num_classes, activation_fn=None, scope='AuxLogits')
+        endpoints['AuxLogits'] = aux_logits
+        return aux_logits
+
+
+def block_c(net, endpoints, scope='BlockC'):
+    with tf.variable_scope(scope):
+        with tf.variable_scope('Br1_1x1'):
+            branch1x1 = layers.conv2d(net, 320, [1, 1])
+        with tf.variable_scope('Br2_3x3'):
+            branch3x3 = layers.conv2d(net, 384, [1, 1])
+            branch3x3 = tf.concat(3, [layers.conv2d(branch3x3, 384, [1, 3]),
+                                      layers.conv2d(branch3x3, 384, [3, 1])])
+        with tf.variable_scope('Br3_3x3dbl'):
+            branch3x3dbl = layers.conv2d(net, 448, [1, 1])
+            branch3x3dbl = layers.conv2d(branch3x3dbl, 384, [3, 3])
+            branch3x3dbl = tf.concat(3, [layers.conv2d(branch3x3dbl, 384, [1, 3]),
+                                         layers.conv2d(branch3x3dbl, 384, [3, 1])])
+        with tf.variable_scope('Br4_Pool'):
+            branch_pool = layers.avg_pool2d(net, [3, 3])
+            branch_pool = layers.conv2d(branch_pool, 192, [1, 1])
+        net = tf.concat(3, [branch1x1, branch3x3, branch3x3dbl, branch_pool])
+        endpoints[scope] = net
+        return net
+
+
+def block_output(net, endpoints, num_classes, dropout_keep_prob=0.5):
+    with tf.variable_scope('Output'):
+        shape = net.get_shape()
+        net = layers.avg_pool2d(net, shape[1:3], padding='VALID', scope='AvgPool')
+        # 1 x 1 x 2048
+        net = layers.dropout(net, dropout_keep_prob)
+        net = layers.flatten(net)
+        # 2048
+        logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='Logits')
+
+        # num_classes
+        endpoints['Logits'] = logits
+        return logits
+
+
+def stack(net, endpoints, fn=None, count=1, **kwargs):
+    scope = kwargs.pop('scope')
+    for i in range(count):
+        block_scope = '%s%d' % (scope, (i+1))
+        kwargs['scope'] = block_scope
+        net = fn(net, **kwargs)
+        endpoints[block_scope] = net
+    print('%s output shape: %s' % (scope, net.get_shape()))
+    return net
+
+
 def build_inception_v3(
         inputs,
         dropout_keep_prob=0.8,
@@ -42,250 +199,73 @@ def build_inception_v3(
     """
     # endpoints will collect relevant activations for external use, for example
     # summaries or losses.
-
+    activation_fn = tf.nn.relu
+    stack_counts = [3, 5, 2]
     endpoints = {}
-    with tf.op_scope([inputs], scope, 'inception_v3'):
-        with arg_scope(
-                [layers.batch_norm, layers.dropout],
-                is_training=is_training):
-            with arg_scope(
-                    [layers.conv2d, layers.max_pool2d, layers.avg_pool2d],
-                    stride=1, padding='VALID'):
-                # 299 x 299 x 3
-                endpoints['conv0'] = layers.conv2d(inputs, 32, [3, 3], stride=2, scope='conv0')
-                # 149 x 149 x 32
-                endpoints['conv1'] = layers.conv2d(endpoints['conv0'], 32, [3, 3], scope='conv1')
-                # 147 x 147 x 32
-                endpoints['conv2'] = layers.conv2d(endpoints['conv1'], 64, [3, 3], padding='SAME', scope='conv2')
-                # 147 x 147 x 64
-                endpoints['pool1'] = layers.max_pool2d(endpoints['conv2'], [3, 3], stride=2, scope='pool1')
-                # 73 x 73 x 64
-                endpoints['conv3'] = layers.conv2d(endpoints['pool1'], 80, [1, 1], scope='conv3')
-                # 73 x 73 x 80.
-                endpoints['conv4'] = layers.conv2d(endpoints['conv3'], 192, [3, 3], scope='conv4')
-                # 71 x 71 x 192.
-                endpoints['pool2'] = layers.max_pool2d(endpoints['conv4'], [3, 3], stride=2, scope='pool2')
-                # 35 x 35 x 192.
-                net = endpoints['pool2']
-            # Inception blocks
-            with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME'):
-                # mixed: 35 x 35 x 256.
-                with tf.variable_scope('mixed_35x35x256a'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 64, [1, 1])
-                    with tf.variable_scope('branch5x5'):
-                        branch5x5 = layers.conv2d(net, 48, [1, 1])
-                        branch5x5 = layers.conv2d(branch5x5, 64, [5, 5])
-                    with tf.variable_scope('branch3x3dbl'):
-                        branch3x3dbl = layers.conv2d(net, 64, [1, 1])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 32, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch5x5, branch3x3dbl, branch_pool])
-                    endpoints['mixed_35x35x256a'] = net
-                # mixed_1: 35 x 35 x 288.
-                with tf.variable_scope('mixed_35x35x288a'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 64, [1, 1])
-                    with tf.variable_scope('branch5x5'):
-                        branch5x5 = layers.conv2d(net, 48, [1, 1])
-                        branch5x5 = layers.conv2d(branch5x5, 64, [5, 5])
-                    with tf.variable_scope('branch3x3dbl'):
-                        branch3x3dbl = layers.conv2d(net, 64, [1, 1])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 64, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch5x5, branch3x3dbl, branch_pool])
-                    endpoints['mixed_35x35x288a'] = net
-                # mixed_2: 35 x 35 x 288.
-                with tf.variable_scope('mixed_35x35x288b'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 64, [1, 1])
-                    with tf.variable_scope('branch5x5'):
-                        branch5x5 = layers.conv2d(net, 48, [1, 1])
-                        branch5x5 = layers.conv2d(branch5x5, 64, [5, 5])
-                    with tf.variable_scope('branch3x3dbl'):
-                        branch3x3dbl = layers.conv2d(net, 64, [1, 1])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 64, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch5x5, branch3x3dbl, branch_pool])
-                    endpoints['mixed_35x35x288b'] = net
-                # mixed_3: 17 x 17 x 768.
-                with tf.variable_scope('mixed_17x17x768a'):
-                    with tf.variable_scope('branch3x3'):
-                        branch3x3 = layers.conv2d(net, 384, [3, 3], stride=2, padding='VALID')
-                    with tf.variable_scope('branch3x3dbl'):
-                        branch3x3dbl = layers.conv2d(net, 64, [1, 1])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 96, [3, 3],
-                                                  stride=2, padding='VALID')
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.max_pool2d(net, [3, 3], stride=2, padding='VALID')
-                    net = tf.concat(3, [branch3x3, branch3x3dbl, branch_pool])
-                    endpoints['mixed_17x17x768a'] = net
-                # mixed4: 17 x 17 x 768.
-                with tf.variable_scope('mixed_17x17x768b'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 192, [1, 1])
-                    with tf.variable_scope('branch7x7'):
-                        branch7x7 = layers.conv2d(net, 128, [1, 1])
-                        branch7x7 = layers.conv2d(branch7x7, 128, [1, 7])
-                        branch7x7 = layers.conv2d(branch7x7, 192, [7, 1])
-                    with tf.variable_scope('branch7x7dbl'):
-                        branch7x7dbl = layers.conv2d(net, 128, [1, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 128, [7, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 128, [1, 7])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 128, [7, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 192, [1, 7])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 192, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
-                    endpoints['mixed_17x17x768b'] = net
-                # mixed_5: 17 x 17 x 768.
-                with tf.variable_scope('mixed_17x17x768c'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 192, [1, 1])
-                    with tf.variable_scope('branch7x7'):
-                        branch7x7 = layers.conv2d(net, 160, [1, 1])
-                        branch7x7 = layers.conv2d(branch7x7, 160, [1, 7])
-                        branch7x7 = layers.conv2d(branch7x7, 192, [7, 1])
-                    with tf.variable_scope('branch7x7dbl'):
-                        branch7x7dbl = layers.conv2d(net, 160, [1, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 160, [7, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 160, [1, 7])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 160, [7, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 192, [1, 7])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 192, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
-                    endpoints['mixed_17x17x768c'] = net
-                # mixed_6: 17 x 17 x 768.
-                with tf.variable_scope('mixed_17x17x768d'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 192, [1, 1])
-                    with tf.variable_scope('branch7x7'):
-                        branch7x7 = layers.conv2d(net, 160, [1, 1])
-                        branch7x7 = layers.conv2d(branch7x7, 160, [1, 7])
-                        branch7x7 = layers.conv2d(branch7x7, 192, [7, 1])
-                    with tf.variable_scope('branch7x7dbl'):
-                        branch7x7dbl = layers.conv2d(net, 160, [1, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 160, [7, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 160, [1, 7])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 160, [7, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 192, [1, 7])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 192, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
-                    endpoints['mixed_17x17x768d'] = net
-                # mixed_7: 17 x 17 x 768.
-                with tf.variable_scope('mixed_17x17x768e'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 192, [1, 1])
-                    with tf.variable_scope('branch7x7'):
-                        branch7x7 = layers.conv2d(net, 192, [1, 1])
-                        branch7x7 = layers.conv2d(branch7x7, 192, [1, 7])
-                        branch7x7 = layers.conv2d(branch7x7, 192, [7, 1])
-                    with tf.variable_scope('branch7x7dbl'):
-                        branch7x7dbl = layers.conv2d(net, 192, [1, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 192, [7, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 192, [1, 7])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 192, [7, 1])
-                        branch7x7dbl = layers.conv2d(branch7x7dbl, 192, [1, 7])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 192, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch7x7, branch7x7dbl, branch_pool])
-                    endpoints['mixed_17x17x768e'] = net
-                # Auxiliary Head logits
-                aux_logits = tf.identity(endpoints['mixed_17x17x768e'])
-                with tf.variable_scope('aux_logits'):
-                    aux_logits = layers.avg_pool2d(aux_logits, [5, 5], stride=3, padding='VALID')
-                    aux_logits = layers.conv2d(aux_logits, 128, [1, 1], scope='proj')
-                    # Shape of feature map before the final layer.
-                    shape = aux_logits.get_shape()
-                    #stddev=0.01,
-                    aux_logits = layers.conv2d(aux_logits, 768, shape[1:3], padding='VALID')
-                    aux_logits = layers.flatten(aux_logits)
-                    #stddev=0.001
-                    aux_logits = layers.fully_connected(aux_logits, num_classes, activation_fn=None)
-                    print(tf.get_variable_scope().name)
-                    endpoints['aux_logits'] = aux_logits
-                # mixed_8: 8 x 8 x 1280.
-                # Note that the scope below is not changed to not void previous
-                # checkpoints.
-                # (TODO) Fix the scope when appropriate.
-                with tf.variable_scope('mixed_17x17x1280a'):
-                    with tf.variable_scope('branch3x3'):
-                        branch3x3 = layers.conv2d(net, 192, [1, 1])
-                        branch3x3 = layers.conv2d(branch3x3, 320, [3, 3], stride=2, padding='VALID')
-                    with tf.variable_scope('branch7x7x3'):
-                        branch7x7x3 = layers.conv2d(net, 192, [1, 1])
-                        branch7x7x3 = layers.conv2d(branch7x7x3, 192, [1, 7])
-                        branch7x7x3 = layers.conv2d(branch7x7x3, 192, [7, 1])
-                        branch7x7x3 = layers.conv2d(branch7x7x3, 192, [3, 3], stride=2, padding='VALID')
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.max_pool2d(net, [3, 3], stride=2, padding='VALID')
-                    net = tf.concat(3, [branch3x3, branch7x7x3, branch_pool])
-                    endpoints['mixed_17x17x1280a'] = net
-                # mixed_9: 8 x 8 x 2048.
-                with tf.variable_scope('mixed_8x8x2048a'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 320, [1, 1])
-                    with tf.variable_scope('branch3x3'):
-                        branch3x3 = layers.conv2d(net, 384, [1, 1])
-                        branch3x3 = tf.concat(3, [layers.conv2d(branch3x3, 384, [1, 3]),
-                                                  layers.conv2d(branch3x3, 384, [3, 1])])
-                    with tf.variable_scope('branch3x3dbl'):
-                        branch3x3dbl = layers.conv2d(net, 448, [1, 1])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 384, [3, 3])
-                        branch3x3dbl = tf.concat(3, [layers.conv2d(branch3x3dbl, 384, [1, 3]),
-                                                     layers.conv2d(branch3x3dbl, 384, [3, 1])])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 192, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch3x3, branch3x3dbl, branch_pool])
-                    endpoints['mixed_8x8x2048a'] = net
-                # mixed_10: 8 x 8 x 2048.
-                with tf.variable_scope('mixed_8x8x2048b'):
-                    with tf.variable_scope('branch1x1'):
-                        branch1x1 = layers.conv2d(net, 320, [1, 1])
-                    with tf.variable_scope('branch3x3'):
-                        branch3x3 = layers.conv2d(net, 384, [1, 1])
-                        branch3x3 = tf.concat(3, [layers.conv2d(branch3x3, 384, [1, 3]),
-                                                  layers.conv2d(branch3x3, 384, [3, 1])])
-                    with tf.variable_scope('branch3x3dbl'):
-                        branch3x3dbl = layers.conv2d(net, 448, [1, 1])
-                        branch3x3dbl = layers.conv2d(branch3x3dbl, 384, [3, 3])
-                        branch3x3dbl = tf.concat(3, [layers.conv2d(branch3x3dbl, 384, [1, 3]),
-                                                     layers.conv2d(branch3x3dbl, 384, [3, 1])])
-                    with tf.variable_scope('branch_pool'):
-                        branch_pool = layers.avg_pool2d(net, [3, 3])
-                        branch_pool = layers.conv2d(branch_pool, 192, [1, 1])
-                    net = tf.concat(3, [branch1x1, branch3x3, branch3x3dbl, branch_pool])
-                    endpoints['mixed_8x8x2048b'] = net
-                # Final pooling and prediction
-                with tf.variable_scope('logits'):
-                    shape = net.get_shape()
-                    net = layers.avg_pool2d(net, shape[1:3], padding='VALID', scope='pool')
-                    # 1 x 1 x 2048
-                    net = layers.dropout(net, dropout_keep_prob, scope='dropout')
-                    net = layers.flatten(net, scope='flatten')
-                    # 2048
-                    logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits')
-                    print(tf.get_variable_scope().name)
+    # Inception blocks
+    op_scope_net = tf.op_scope([inputs], scope, 'inception_v3')
+    arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME')
+    arg_scope_train = arg_scope([layers.batch_norm, layers.dropout], is_training=is_training)
+    with op_scope_net, arg_scope_conv, arg_scope_train:
 
-                    # 1000
-                    endpoints['logits'] = logits
-                    endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
+        net = block_stem(inputs, endpoints)
+        # 35 x 35 x 384 (v2)
 
-                    return logits, endpoints
+        with tf.variable_scope('Scale1'):
+
+            # mixed: 35 x 35 x 256.
+            stack_a_args = [32, 64, 64]
+            net = block_a(net, endpoints, k = 32, scope='mixed_35x35x256a')
+            # mixed_1: 35 x 35 x 288.
+            net = block_a(net, endpoints, k = 64, scope='mixed_35x36x288a')
+            # mixed_2: 35 x 35 x 288.
+            net = block_a(net, endpoints, k = 64, scope='mixed_35x35x288b')
+
+            net = stack(
+                net, endpoints, fn=block_a, count=stack_counts[0],
+                scope='BlockA', activation_fn=activation_fn)
+            # 35 x 35 x 384
+
+        with tf.variable_scope('Scale2'):
+            # mixed_3: 17 x 17 x 768.
+
+            stack_b_args = [128, 160, 160, 192]
+            net = block_a_reduce(net, endpoints, 'mixed_17x17x768a')
+            # mixed4: 17 x 17 x 768.
+            net = block_b(net, endpoints, w=128, 'mixed_17x17x768b')
+            # mixed_5: 17 x 17 x 768.
+            net = block_b(net, endpoints, w=160, 'mixed_17x17x768c')
+            # mixed_6: 17 x 17 x 768.
+            net = block_b(net, endpoints, w=160, 'mixed_17x17x768d')
+            # mixed_7: 17 x 17 x 768.
+            net = block_b(net, endpoints, w=192, 'mixed_17x17x768e')
+
+            net = stack(
+                net, endpoints, fn=block_b, count=stack_counts[1],
+                scope='BlockB', activation_fn=activation_fn)
+            # 17 x 17 x 896 v1, 1152 v2
+
+        with tf.variable_scope('Scale3'):
+            # mixed_8: 8 x 8 x 1280.
+            block_b_reduce(net, endpoints, 'mixed_17x17x1280a')
+            # mixed_9: 8 x 8 x 2048.
+            block_c(net, endpoints, 'mixed_8x8x2048a')
+            # mixed_10: 8 x 8 x 2048.
+            block_c(net, endpoints, 'mixed_8x8x2048b')
+
+
+
+
+
+
+
+
+            # Auxiliary Head logits
+            aux_logits = tf.identity(net)
+
+
+            # Final pooling and prediction
+            logits = block_output(net, endpoints, num_classes, dropout_keep_prob)
+            endpoints['Predictions'] = tf.nn.softmax(logits, name='Predictions')
+
+            return logits, endpoints

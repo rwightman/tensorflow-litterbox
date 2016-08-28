@@ -16,16 +16,17 @@ class StateFarmData(DatasetRecord):
         super(StateFarmData, self).__init__('SFarm', subset)
         self.has_background_class = True
 
+    def num_classes(self):
+        return 10
+
     def num_examples_per_epoch(self):
         """Returns the number of examples in the data subset."""
         if self.subset == 'train':
-            return 19328
+            #return 19328
+            return 19898 # sfarm select
         elif self.subset == 'validation':
-            return 3096
-
-    def num_classes(self):
-        """Returns the number of classes in the data set."""
-        return 10
+            #return 3096
+            return 2364 # sfarm select
 
 
 class StateFarmDataFile(DatasetFile):

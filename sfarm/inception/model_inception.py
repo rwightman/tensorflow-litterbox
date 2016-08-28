@@ -66,46 +66,50 @@ class ModelInception(model.Model):
         }
         # Set weight_decay for weights in Conv and FC layers.
         l2_regularizer = layers.l2_regularizer(0.00004)
+        res_scale = 0.3
+        activation_fn = tf.nn.elu
 
-        with arg_scope(
-                [layers.conv2d, layers.fully_connected],
-                weights_initializer=layers.xavier_initializer(),
-                weights_regularizer=l2_regularizer):
-            with arg_scope(
-                    [layers.conv2d],
-                    activation_fn=tf.nn.relu,
-                    normalizer_fn=layers.batch_norm,
-                    normalizer_params=batch_norm_params):
-
-                if self.variant == ModelInception.Variant.V3:
-                    logits, endpoints = build_inception_v3(
-                        images,
-                        dropout_keep_prob=0.8,
-                        num_classes=num_classes,
-                        is_training=is_training,
-                        scope=scope)
-                elif self.variant == ModelInception.Variant.V4:
-                    logits, endpoints = build_inception_v4(
-                        images,
-                        dropout_keep_prob=0.8,
-                        num_classes=num_classes,
-                        is_training=is_training,
-                        scope=scope)
-                else:
-                    ver = 1 if self.variant == ModelInception.Variant.ResnetV1 else 2
-                    res_scale = 0.1
-                    logits, endpoints = build_inception_resnet(
-                        images,
-                        ver=ver,
-                        res_scale=res_scale,
-                        dropout_keep_prob=0.8,
-                        num_classes=num_classes,
-                        is_training=is_training,
-                        scope=scope)
+        arg_scope_weights = arg_scope(
+            [layers.conv2d, layers.fully_connected],
+            weights_initializer=layers.variance_scaling_initializer(factor=1.0),
+            weights_regularizer=l2_regularizer
+        )
+        arg_scope_conv = arg_scope(
+            [layers.conv2d],
+            activation_fn=activation_fn,
+            #normalizer_fn=layers.batch_norm,
+            #normalizer_params=batch_norm_params
+        )
+        with arg_scope_weights, arg_scope_conv:
+            if self.variant == ModelInception.Variant.V3:
+                logits, endpoints = build_inception_v3(
+                    images,
+                    dropout_keep_prob=0.8,
+                    num_classes=num_classes,
+                    is_training=is_training,
+                    scope=scope)
+            elif self.variant == ModelInception.Variant.V4:
+                logits, endpoints = build_inception_v4(
+                    images,
+                    dropout_keep_prob=0.8,
+                    num_classes=num_classes,
+                    is_training=is_training,
+                    scope=scope)
+            else:
+                ver = 1 if self.variant == ModelInception.Variant.ResnetV1 else 2
+                logits, endpoints = build_inception_resnet(
+                    images,
+                    ver=ver,
+                    res_scale=res_scale,
+                    activation_fn=activation_fn,  # activation_fn used directly in res blocks
+                    dropout_keep_prob=0.67,
+                    num_classes=num_classes,
+                    is_training=is_training,
+                    scope=scope)
 
         if self.variant == ModelInception.Variant.V3:
             # Grab the logits associated with the side head. Employed during training.
-            aux_logits = endpoints['aux_logits']
+            aux_logits = endpoints['AuxLogits']
         else:
             aux_logits = None
 
@@ -156,7 +160,7 @@ class ModelInception(model.Model):
                 tower.aux_logits, dense_labels, label_smoothing=0.1, weight=0.4, scope='aux_loss')
 
     def logit_scopes(self):
-        return ['output/logits']
+        return ['Output/Logits']
 
     @staticmethod
     def loss_op(logits, labels):

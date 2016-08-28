@@ -19,7 +19,8 @@ FLAGS = tf.app.flags.FLAGS
 
 def main(unused_argv=None):
     dataset = StateFarmDataFile(subset=FLAGS.subset)
-    model = ModelVgg16()
+    #model = ModelInception(variant=ModelInception.Variant.ResnetV2)
+    model = ModelResnet(num_layers=16, width_factor=2)
     assert dataset.data_files()
     if tf.gfile.Exists(FLAGS.eval_dir):
         tf.gfile.DeleteRecursively(FLAGS.eval_dir)

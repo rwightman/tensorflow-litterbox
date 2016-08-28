@@ -1,3 +1,5 @@
+import layers as my_layers
+
 import tensorflow as tf
 from tensorflow.contrib.framework import arg_scope
 from tensorflow.contrib import layers
@@ -5,67 +7,124 @@ from tensorflow.contrib import layers
 FLAGS = tf.app.flags.FLAGS
 
 
-#@layers.add_arg_scope
-def block(net, num_filters_internal, block_stride, bottleneck=True, scope='block', activation_fn=tf.nn.relu):
-    # default padding=SAME
-    # default stride=1
-
+def calc_num_filters_out(num_filters_internal, bottleneck=False):
     # If bottleneck, num_filters_internal*4 filters are output.
     # num_filters_internal is how many filters the 3x3 convolutions output.
-    m = 4 if bottleneck else 1
-    num_filters_in = net.get_shape()[-1]
-    num_filters_out = m * num_filters_internal
-
-    with tf.variable_scope(scope):
-        shortcut = tf.identity(net)
-
-        if bottleneck:
-            net = layers.conv2d(net, num_filters_internal, [1, 1], stride=block_stride, scope='a')
-            net = layers.conv2d(net, num_filters_internal, [3, 3], scope='b')
-            net = layers.conv2d(net, num_filters_out, [1, 1], activation_fn=None, scope='c')
-        else:
-            net = layers.conv2d(net, num_filters_internal, [3, 3], stride=block_stride, scope='A')
-            net = layers.conv2d(net, num_filters_out, [3, 3], activation_fn=None, scope='B')
-
-        if num_filters_out != num_filters_in or block_stride != 1:
-            shortcut = layers.conv2d(
-                shortcut, num_filters_out, [1, 1],
-                stride=block_stride, activation_fn=None, padding='VALID', scope='shortcut')
-
-        return activation_fn(tf.add(net, shortcut))
+    return 4 * num_filters_internal if bottleneck else num_filters_internal
 
 
-def stack(net, num_blocks, num_filters_internal, stack_stride=1, bottleneck=True, scope='stack'):
-    with tf.variable_scope(scope):
-        for n in range(num_blocks):
-            block_stride = stack_stride if n == 0 else 1
-            block_scope = 'block%d' % n
-            net = block(net, num_filters_internal, block_stride, bottleneck=bottleneck, scope=block_scope)
+def stem(inputs, endpoints, num_filters=64):
+    with tf.variable_scope('Stem'):
+        net = layers.conv2d(inputs, num_filters, [7, 7], stride=2, scope='Conv1')
+        net = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1')
+    endpoints['Stem'] = net
+    print("Stem output size: ", net.get_shape())
     return net
 
 
-def output(net, num_classes):
-    #FIXME temporary hack for model checkpoint compatibility
-    if True:
-        net = layers.avg_pool2d(net, [7, 7], scope='avg_pool')
-        net = layers.flatten(net, scope='flatten')
-        with tf.variable_scope('logits'):
-            net = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits')
-            # num_classes
-    else:
-        with tf.variable_scope('output'):
-            net = layers.avg_pool2d(net, [7, 7])
-            net = layers.flatten(net)
-            #FIXME monitor global average pool in endpoints?
-            net = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits')
-            # num_classes
+#@add_arg_scope
+def block_original(net, num_filters_internal, block_stride,
+                   bottleneck=False, res_scale=None, scope='Block', activation_fn=tf.nn.relu):
+    """Definition of the original Resnet 'basic' (double 3x3) and 'bottleneck' (1x1 + 3x3 + 1x1) block"""
+    # default padding=SAME
+    # default stride=1
+    num_filters_in = net.get_shape()[-1]
+    num_filters_out = calc_num_filters_out(num_filters_internal, bottleneck)
+
+    with tf.variable_scope(scope):
+        with tf.variable_scope('Shortcut'):
+            if num_filters_out != num_filters_in or block_stride != 1:
+                shortcut = layers.conv2d(
+                    net, num_filters_out, [1, 1],
+                    stride=block_stride, activation_fn=None, padding='VALID', scope='Conv1_1x1')
+            else:
+                shortcut = tf.identity(net)
+
+            if res_scale:
+                shortcut = tf.mul(shortcut, res_scale)  # scale the residual by constant if param is set
+
+        if bottleneck:
+            net = layers.conv2d(net, num_filters_internal, [1, 1], stride=block_stride, scope='Conv1_1x1')
+            net = layers.conv2d(net, num_filters_internal, [3, 3], scope='Conv2_3x3')
+            net = layers.conv2d(net, num_filters_out, [1, 1], activation_fn=None, scope='Conv3_1x1')
+        else:
+            net = layers.conv2d(net, num_filters_internal, [3, 3], stride=block_stride, scope='Conv1_3x3')
+            net = layers.conv2d(net, num_filters_out, [3, 3], activation_fn=None, scope='Conv2_3x3')
+
+        net = tf.add(net, shortcut)
+        return activation_fn(net)
+
+
+#@add_arg_scope
+def block_preact(net, num_filters_internal, block_stride,
+                 bottleneck=False, res_scale=None, scope='Block', activation_fn=tf.nn.relu):
+    """Definition of the pre-activation Resnet 'basic' (double 3x3 and 'bottleneck' (1x1 + 3x3 + 1x1) block"""
+    # default padding=SAME
+    # default stride=1
+    num_filters_in = net.get_shape()[-1]
+    num_filters_out = calc_num_filters_out(num_filters_internal, bottleneck)
+
+    with tf.variable_scope(scope):
+        # shared norm + activation for both convolution and residual shortcut branch
+        net = layers.batch_norm(net, activation_fn=activation_fn)
+
+        with tf.variable_scope('Shortcut'):
+            if num_filters_out != num_filters_in or block_stride != 1:
+                shortcut = my_layers.preact_conv2d(
+                    net, num_filters_out, [1, 1], stride=block_stride,
+                    normalizer_fn=None, padding='VALID', scope='Conv_1x1')
+            else:
+                shortcut = tf.identity(net)
+
+            if res_scale:
+                shortcut = tf.mul(shortcut, res_scale)  # scale the residual by constant if param is set
+
+        if bottleneck:
+            net = my_layers.preact_conv2d(
+                net, num_filters_internal, [1, 1], stride=block_stride, normalizer_fn=None, scope='Conv1_1x1')
+            net = my_layers.preact_conv2d(net, num_filters_internal, [3, 3], scope='Conv2_3x3')
+            net = my_layers.preact_conv2d(net, num_filters_out, [1, 1], scope='Conv3_1x1')
+        else:
+            net = my_layers.preact_conv2d(
+                net, num_filters_internal, [3, 3], stride=block_stride, normalizer_fn=None, scope='Conv1_3x3')
+            net = my_layers.preact_conv2d(net, num_filters_out, [3, 3], scope='Conv2_3x3')
+
+        return tf.add(net, shortcut)
+
+
+def stack(net, endpoints, num_blocks, num_filters, stack_stride=1, pre_act=False, **kwargs):
+    scope = kwargs.pop('scope')
+    with tf.variable_scope(scope):
+        for i in range(num_blocks):
+            block_stride = stack_stride if i == 0 else 1
+            block_scope = 'Block' + str(i + 1)
+            kwargs['scope'] = block_scope
+            if pre_act:
+                net = block_preact(net, num_filters, block_stride, **kwargs)
+            else:
+                net = block_original(net, num_filters, block_stride, **kwargs)
+            endpoints[scope + block_scope] = net
+        print('%s output shape: %s' % (scope, net.get_shape()))
+    return net
+
+
+def output(net, endpoints, num_classes, pre_act=False):
+    with tf.variable_scope('Output'):
+        if pre_act:
+            net = layers.batch_norm(net, activation_fn=tf.nn.relu)
+        net = layers.avg_pool2d(net, [7, 7])
+        endpoints['OutputAvgPool'] = net
+        net = layers.flatten(net)
+        net = layers.fully_connected(net, num_classes, activation_fn=None, scope='Logits')
+        endpoints['Logits'] = net
+        # num_classes
     return net
 
 
 def build_resnet(
         inputs,
         k=1,  # width factor
-        dropout_keep_prob=0.5,
+        pre_activation=False,
         num_classes=1000,
         num_blocks=[3, 4, 6, 3],
         is_training=True,
@@ -74,43 +133,38 @@ def build_resnet(
     """Blah"""
 
     endpoints = {}  # A dictionary of endpoints to observe (activations, extra stats, etc)
-    with tf.op_scope([inputs], scope, 'resnet'):
-        with arg_scope([layers.batch_norm, layers.dropout], is_training=is_training):
-            with arg_scope(
-                    [layers.conv2d, layers.max_pool2d, layers.avg_pool2d],
-                    stride=1,
-                    padding='SAME'):
+    op_scope_net = tf.op_scope([inputs], scope, 'ResNet')
+    arg_scope_train = arg_scope([layers.batch_norm, layers.dropout], is_training=is_training)
+    arg_scope_conv = arg_scope(
+        [layers.conv2d, my_layers.preact_conv2d, layers.max_pool2d, layers.avg_pool2d],
+        stride=1, padding='SAME')
+    with op_scope_net, arg_scope_train, arg_scope_conv:
 
-                # 224 x 224
-                with tf.variable_scope('stage1'):
-                    net = layers.conv2d(inputs, 64 * k, [7, 7], stride=2)
-                    net = layers.max_pool2d(net, [3, 3], stride=2)
-                endpoints['stage1'] = net
-                print("Stage 1 output size: ", net.get_shape())
-                # 56 x 56
+        # 224 x 224
+        net = stem(inputs, endpoints, 64 * k)
+        # 56 x 56
 
-                net = stack(net, num_blocks[0], 64 * k, stack_stride=1, bottleneck=bottleneck, scope='stage2')
-                endpoints['stage2'] = net
-                print("Stage 2 output size: ", net.get_shape())
-                # 56 x 56
+        net = stack(
+            net, endpoints, num_blocks[0], num_filters=64 * k, stack_stride=1,
+            bottleneck=bottleneck, pre_act=pre_activation, scope='Scale1')
+        # 56 x 56
 
-                net = stack(net, num_blocks[1], 128 * k, stack_stride=2, bottleneck=bottleneck, scope='stage3')
-                endpoints['stage3'] = net
-                print("Stage 3 output size: ", net.get_shape())
-                # 28 x 28
+        net = stack(
+            net, endpoints, num_blocks[1], num_filters=128 * k, stack_stride=2,
+            bottleneck=bottleneck, pre_act=pre_activation, scope='Scale2')
+        # 28 x 28
 
-                net = stack(net, num_blocks[2], 256 * k, stack_stride=2, bottleneck=bottleneck, scope='stage4')
-                endpoints['stage4'] = net
-                print("Stage 4 output size: ", net.get_shape())
-                # 14 x 14
+        net = stack(
+            net, endpoints, num_blocks[2], num_filters=256 * k, stack_stride=2,
+            bottleneck=bottleneck, pre_act=pre_activation, scope='Scale3')
+        # 14 x 14
 
-                net = stack(net, num_blocks[3], 512 * k, stack_stride=2, bottleneck=bottleneck, scope='stage5')
-                endpoints['stage5'] = net
-                print("Stage 5 output size: ", net.get_shape())
-                # 7 x 7
+        net = stack(
+            net, endpoints, num_blocks[3], num_filters=512 * k, stack_stride=2,
+            bottleneck=bottleneck, pre_act=pre_activation, scope='Scale4')
+        # 7 x 7
 
-                logits = output(net, num_classes)
-                endpoints['logits'] = logits
-                endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
+        logits = output(net, endpoints, num_classes, pre_act=pre_activation)
+        endpoints['Predictions'] = tf.nn.softmax(logits, name='Predictions')
 
-                return logits, endpoints
+        return logits, endpoints
