@@ -131,10 +131,12 @@ class Feed(object):
             inputs = self._batch_inputs_record(train) if self.dataset.is_record \
                 else self._batch_inputs_file(train)
 
+            batch_queue_capacity = 2 * self.num_preprocess_threads * self.batch_size
             images, label_batch, name_batch = tf.train.batch_join(
                 inputs,
                 batch_size=self.batch_size,
-                capacity=2 * self.num_preprocess_threads * self.batch_size)
+                capacity=batch_queue_capacity)
+                #allow_smaller_final_batch=(not train))
 
             images = tf.cast(images, tf.float32)
             images = tf.reshape(images, shape=[self.batch_size, self.height, self.width, self.depth])

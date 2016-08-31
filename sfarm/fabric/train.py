@@ -75,6 +75,9 @@ tf.app.flags.DEFINE_float('num_epochs_per_decay', 25.0,
 tf.app.flags.DEFINE_float('learning_rate_decay_factor', 0.2,
                           """Learning rate decay factor.""")
 
+tf.app.flags.DEFINE_float('grad_clip', 5.0,
+                          """Clip gradients to this value.""")
+
 tf.app.flags.DEFINE_string('subset', 'train',
                            """Either 'validation' or 'train'.""")
 
@@ -256,6 +259,11 @@ def _build_train_graph(feed, model):
     # synchronization point across all towers.
     grads = _average_gradients(tower_grads) if num_gpus > 1 else tower_grads[0]
 
+    if FLAGS.grad_clip:
+        g, v = zip(*grads)
+        g, _ = tf.clip_by_global_norm(g, FLAGS.grad_clip)
+        grads = list(zip(g, v))
+    
     # Add a summaries for the input processing and global_step.
     summaries.extend(input_summaries)
 

@@ -42,7 +42,17 @@ from __future__ import print_function
 
 import tensorflow as tf
 import numpy as np
-import cv2
+try:
+    import cv2
+    has_cv2 = True
+except ImportError:
+    has_cv2 = False
+
+try:
+    from skimage import transform
+    has_skimage = True
+except ImportError:
+    has_skimage = False
 
 IMAGENET_MEAN_CAFFE = [103.939, 116.779, 123.68]
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -106,7 +116,7 @@ def distort_color(image, thread_id=0, scope=None):
         return image
 
 
-def distort_affine(image, alpha_affine=10, random_state=None):
+def distort_affine_cv2(image, alpha_affine=15, random_state=None):
     if random_state is None:
         random_state = np.random.RandomState(None)
 
@@ -127,7 +137,27 @@ def distort_affine(image, alpha_affine=10, random_state=None):
     return distorted_image
 
 
-def distort_elastic(image, alpha=100, sigma=20, random_state=None):
+def distort_affine_skimage(image, angle=10, random_state=None):
+    if random_state is None:
+        random_state = np.random.RandomState(None)
+
+    rot = np.deg2rad(random_state.randint(-angle, angle))
+    sheer = np.deg2rad(random_state.randint(-angle, angle))
+
+    shape = image.shape
+    shape_size = shape[:2]
+    center = np.float32(shape_size) / 2. - 0.5
+
+    pre = transform.SimilarityTransform(translation=-center)
+    affine = transform.AffineTransform(rotation=rot, shear=sheer, translation=center)
+    tform = pre + affine
+
+    distorted_image = transform.warp(image, tform.params, mode='reflect')
+
+    return distorted_image.astype(np.float32)
+
+
+def distort_elastic_cv2(image, alpha=100, sigma=20, random_state=None):
     """Elastic deformation of images as per [Simard2003].
     """
     if random_state is None:
@@ -146,7 +176,8 @@ def distort_elastic(image, alpha=100, sigma=20, random_state=None):
     grid_x = (grid_x + rand_x).astype(np.float32)
     grid_y = (grid_y + rand_y).astype(np.float32)
 
-    distorted_img = cv2.remap(image, grid_x, grid_y, borderMode=cv2.BORDER_REFLECT_101, interpolation=cv2.INTER_LINEAR)
+    distorted_img = cv2.remap(image, grid_x, grid_y, 
+        borderMode=cv2.BORDER_REFLECT_101, interpolation=cv2.INTER_LINEAR)
 
     return distorted_img
 
@@ -172,7 +203,7 @@ def distort_image(image, height, width, bbox=None, thread_id=0, scope=None):
     """
     h_flip = True  # FIXME make distortion configuration
     v_flip = False
-    elastic_distortion = True
+    elastic_distortion = False
     affine_distortion = True
 
     with tf.op_scope([image, height, width, bbox], scope, 'distort_image'):
@@ -206,11 +237,16 @@ def distort_image(image, height, width, bbox=None, thread_id=0, scope=None):
             tf.image_summary('images_with_distorted_bounding_box', image_with_distorted_box)
 
         if affine_distortion:
-            distorted_image = tf.py_func(distort_affine, [image], [tf.float32])[0]
-            distorted_image.set_shape([height, width, 3])
+            if has_cv2:
+                image = tf.py_func(distort_affine_cv2, [image], [tf.float32])[0]
+            elif has_skimage:
+                image = tf.py_func(distort_affine_skimage, [image], [tf.float32])[0]
+            else:
+                print('Affine image distortion disabled, no cv2 or skimage module present.')
+            image.set_shape([height, width, 3])
 
         # Crop the image to the specified bounding box.
-        distorted_image = tf.slice(distorted_image, bbox_begin, bbox_size)
+        distorted_image = tf.slice(image, bbox_begin, bbox_size)
 
         # This resizing operation may distort the images because the aspect
         # ratio is not respected.
@@ -224,7 +260,10 @@ def distort_image(image, height, width, bbox=None, thread_id=0, scope=None):
             tf.image_summary('cropped_resized_image', tf.expand_dims(distorted_image, 0))
 
         if elastic_distortion:
-            distorted_image = tf.py_func(distort_elastic, [distorted_image], [tf.float32])[0]
+            if has_cv2:
+                distorted_image = tf.py_func(distort_elastic_cv2, [distorted_image], [tf.float32])[0]
+            else:
+                print('Elastic image distortion disabled, no cv2 module present.')
             distorted_image.set_shape([height, width, 3])
 
         # Randomly flip the image horizontally.

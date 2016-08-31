@@ -66,6 +66,9 @@ def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary
       summary_op: Summary op.
     """
     with tf.Session() as sess:
+        init_op = tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
+        sess.run(init_op)
+
         checkpoint_path, global_step = util.resolve_checkpoint_path(FLAGS.checkpoint_path)
         if not checkpoint_path:
             print('No checkpoint file found at %s' % FLAGS.checkpoint_path)
@@ -106,8 +109,8 @@ def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary
                     start_time = time.time()
 
             # Compute precision @ 1.
-            precision_at_1 = count_top_1 / total_sample_count
-            recall_at_5 = count_top_5 / total_sample_count
+            precision_at_1 = 100 * count_top_1 / total_sample_count
+            recall_at_5 = 100 * count_top_5 / total_sample_count
             loss = count_loss / num_iter
             print('%s: precision @ 1 = %.4f, recall @ 5 = %.4f, loss = %.4f [%d examples]' %
                   (datetime.now(), precision_at_1, recall_at_5, loss, total_sample_count))
