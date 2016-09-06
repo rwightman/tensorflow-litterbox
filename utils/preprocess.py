@@ -1,4 +1,14 @@
+# Copyright (C) 2016 Ross Wightman. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+# ==============================================================================
 from PIL import Image, ImageChops, ImageOps, ImageEnhance
+from skimage import transform
+from skimage import io
 from multiprocessing import Pool
 from functools import partial
 import numpy as np
@@ -67,12 +77,12 @@ def scale_image(image, size=(299,299), keep_aspect=False, pad=False):
     return thumb
 
 
-def distort_image(image, size=(299, 299), keep_aspect=False, pad=False):
+def distort_image_pil(image, size=(299, 299), keep_aspect=False, pad=False):
 
     rot = random.randint(-10, 10)
     
     image_size = image.size
-    image = image.rotate(rot, resample=Image.BICUBIC, expand=False)
+    distorted_image = image.rotate(rot, resample=Image.BICUBIC, expand=False)
     wr, hr = rotated_rect_with_max_area(image_size[0], image_size[1], rot)
     wr = int(wr)
     hr = int(hr)
@@ -81,7 +91,7 @@ def distort_image(image, size=(299, 299), keep_aspect=False, pad=False):
         (image_size[1]-hr) // 2,
         (image_size[0]+wr) // 2,
         (image_size[1]+hr) // 2) 
-    if (wr > size[0] *2):
+    if wr > size[0] * 2:
         max_shift = (wr - size[0] * 2)
         odd = int(max_shift) % 2
         max_shift //= 2
@@ -90,16 +100,36 @@ def distort_image(image, size=(299, 299), keep_aspect=False, pad=False):
     else:
         shift = (0, 0)
     crop_rect = (crop_rect[0] + shift[0], crop_rect[1], crop_rect[2] - shift[1], crop_rect[3])
-    image = image.crop(crop_rect)
+    distorted_image = distorted_image.crop(crop_rect)
 
-    thumb = scale_image(image, size, keep_aspect, pad)
+    distorted_image = scale_image(distorted_image, size, keep_aspect, pad)
 
-    brightness = ImageEnhance.Brightness(thumb)
-    thumb = brightness.enhance(random.uniform(.75, 1.25))
-    contrast = ImageEnhance.Contrast(thumb)
-    thumb = contrast.enhance(random.uniform(.75, 1.25))
+    #brightness = ImageEnhance.Brightness(thumb)
+    #thumb = brightness.enhance(random.uniform(.75, 1.25))
+    #contrast = ImageEnhance.Contrast(thumb)
+    #thumb = contrast.enhance(random.uniform(.75, 1.25))
 
-    return thumb
+    return distorted_image
+
+
+def distort_image_sk(image, size=(299, 299)):
+
+    rot = np.deg2rad(random.randint(-10, 10))
+    sheer = np.deg2rad(random.randint(-10, 10))
+
+    shape = image.shape
+    shape_size = shape[:2]
+    center = np.float32(shape_size) / 2. - 0.5
+
+    pre = transform.SimilarityTransform(translation=-center)
+    affine = transform.AffineTransform(rotation=rot, shear=sheer, translation=center)
+    tform = pre + affine
+
+    distorted_image = transform.warp(image, tform.params, mode='reflect')
+
+    distorted_image = transform.resize(distorted_image, size)
+
+    return distorted_image
 
 
 def calc_stats(image_paths, source_dir):
@@ -163,11 +193,14 @@ def process_file(source_path, dest_path, distortion_count=0):
         print('Invalid destination file')
         return
     
-    scaled = scale_image(image, keep_aspect=False)
-    scaled.save(gen_filename(out_dir, out_file))
+    #scaled = scale_image(image, keep_aspect=False)
+    #scaled.save(gen_filename(out_dir, out_file))
     for count in range(distortion_count):
-        distorted = distort_image(image, keep_aspect=False)
-        distorted.save(gen_filename(out_dir, out_file, str(count + 1)))
+        distorted = distort_image_pil(image, keep_aspect=False)
+        distorted.save(gen_filename(out_dir, out_file, 'a-%d' % (count + 1)))
+
+        distorted2 = distort_image_sk(np.asarray(image))
+        io.imsave(gen_filename(out_dir, out_file, 'b-%d' % (count + 1)), distorted2)
 
 
 def combine_stats(stats):
@@ -213,7 +246,9 @@ def process_dir(source_dir, dest_dir, distortion_count=0, validation_percent=0):
     print(image_mean, image_mean/255, image_std, image_std/255)
     if validation_percent > 0:
         val_dir = os.path.join(dest_dir, 'val/')
-        pool.map(partial(process_multiple, source_dir=source_dir, dest_dir=val_dir, distortion_count=0), validation_files)
+        pool.map(
+            partial(process_multiple, source_dir=source_dir, dest_dir=val_dir, distortion_count=0),
+            validation_files)
     pool.close() 
     pool.join()
 
@@ -244,7 +279,7 @@ def main():
         #process_dir(source_path, dest_path, 5, True)
         directory_stats(source_path)
     elif (os.path.isfile(source_path)):
-        process_file(source_path, dest_path, 0)
+        process_file(source_path, dest_path, 2)
     else:
         print("%s is not a valid file or folder" % source_path)
     

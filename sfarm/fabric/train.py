@@ -1,4 +1,12 @@
-# Copyright 2016 Google Inc. All Rights Reserved.
+# Copyright (C) 2016 Ross Wightman. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+# ==============================================================================
+# Based on original Work Copyright 2016 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,6 +20,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+
 """A library to train Inception using multiple GPU's with synchronous updates.
 """
 from __future__ import absolute_import
@@ -197,14 +206,14 @@ def _build_train_graph(feed, model):
         staircase=True)
 
     # Create an optimizer that performs gradient descent.
-    opt = tf.train.RMSPropOptimizer(
-        lr, RMSPROP_DECAY, momentum=RMSPROP_MOMENTUM, epsilon=RMSPROP_EPSILON)
+    #opt = tf.train.RMSPropOptimizer(
+    #    lr, RMSPROP_DECAY, momentum=RMSPROP_MOMENTUM, epsilon=RMSPROP_EPSILON)
 
     # opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
 
     # opt = tf.train.AdamOptimizer(lr, epsilon=.01)
 
-    # opt = tf.train.MomentumOptimizer(lr, 0.9)
+    opt = tf.train.MomentumOptimizer(lr, 0.9)
 
     # Get images and labels for ImageNet and split the batch across GPUs.
     assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'

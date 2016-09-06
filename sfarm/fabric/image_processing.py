@@ -1,4 +1,12 @@
-# Copyright 2016 Google Inc. All Rights Reserved.
+# Copyright (C) 2016 Ross Wightman. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+# ==============================================================================
+# Based on original Work Copyright 2016 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -116,7 +124,7 @@ def distort_color(image, thread_id=0, scope=None):
         return image
 
 
-def distort_affine_cv2(image, alpha_affine=15, random_state=None):
+def distort_affine_cv2(image, alpha_affine=10, random_state=None):
     if random_state is None:
         random_state = np.random.RandomState(None)
 
@@ -157,20 +165,31 @@ def distort_affine_skimage(image, angle=10, random_state=None):
     return distorted_image.astype(np.float32)
 
 
-def distort_elastic_cv2(image, alpha=100, sigma=20, random_state=None):
+def distort_elastic_cv2(image, alpha=90, sigma=30, random_state=None):
     """Elastic deformation of images as per [Simard2003].
     """
     if random_state is None:
         random_state = np.random.RandomState(None)
 
     shape_size = image.shape[:2]
+
+    # Downscaling the random grid and then upsizing post filter
+    # improves performance. Approx 3x for scale of 4, diminishing returns after.
+    grid_scale = 4
+    alpha //= grid_scale  # Does scaling these make sense? seems to provide
+    sigma //= grid_scale  # more similar end result when scaling grid used.
+    grid_shape = (shape_size[0]//grid_scale, shape_size[1]//grid_scale)
+
     blur_size = int(4 * sigma) | 1
     rand_x = cv2.GaussianBlur(
-        (random_state.rand(*shape_size) * 2 - 1).astype(np.float32),
+        (random_state.rand(*grid_shape) * 2 - 1).astype(np.float32),
         ksize=(blur_size, blur_size), sigmaX=sigma) * alpha
     rand_y = cv2.GaussianBlur(
-        (random_state.rand(*shape_size) * 2 - 1).astype(np.float32),
+        (random_state.rand(*grid_shape) * 2 - 1).astype(np.float32),
         ksize=(blur_size, blur_size), sigmaX=sigma) * alpha
+    if grid_scale > 1:
+        rand_x = cv2.resize(rand_x, shape_size[::-1])
+        rand_y = cv2.resize(rand_y, shape_size[::-1])
 
     grid_x, grid_y = np.meshgrid(np.arange(shape_size[1]), np.arange(shape_size[0]))
     grid_x = (grid_x + rand_x).astype(np.float32)
@@ -203,7 +222,7 @@ def distort_image(image, height, width, bbox=None, thread_id=0, scope=None):
     """
     h_flip = True  # FIXME make distortion configuration
     v_flip = False
-    elastic_distortion = False
+    elastic_distortion = True
     affine_distortion = True
 
     with tf.op_scope([image, height, width, bbox], scope, 'distort_image'):

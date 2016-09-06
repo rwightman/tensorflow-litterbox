@@ -1,3 +1,11 @@
+# Copyright (C) 2016 Ross Wightman. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+# ==============================================================================
 """The Inception v4 network.
 """
 from __future__ import absolute_import
@@ -58,17 +66,17 @@ def block_a(net, scope='BlockA'):
     with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
         with tf.variable_scope(scope):
             with tf.variable_scope('Br1_Pool_1x1'):
-                br1 = layers.avg_pool2d(net, [3, 3])
-                br1 = layers.conv2d(br1, 96, [1, 1])
+                br1 = layers.avg_pool2d(net, [3, 3], scope='Pool1_3x3')
+                br1 = layers.conv2d(br1, 96, [1, 1], scope='Conv1_1x1')
             with tf.variable_scope('Br2_1x1'):
-                br2 = layers.conv2d(net, 96, [1, 1])
+                br2 = layers.conv2d(net, 96, [1, 1], scope='Conv1_1x1')
             with tf.variable_scope('Br3_1x1_3x3'):
-                br3 = layers.conv2d(net, 64, [1, 1])
-                br3 = layers.conv2d(br3, 96, [3, 3])
+                br3 = layers.conv2d(net, 64, [1, 1], scope='Conv1_1x1')
+                br3 = layers.conv2d(br3, 96, [3, 3], scope='Conv2_3x3')
             with tf.variable_scope('Br4_1x1_3x3Dbl'):
-                br4 = layers.conv2d(net, 64, [1, 1])
-                br4 = layers.conv2d(br4, 96, [3, 3])
-                br4 = layers.conv2d(br4, 96, [3, 3])
+                br4 = layers.conv2d(net, 64, [1, 1], scope='Conv1_1x1')
+                br4 = layers.conv2d(br4, 96, [3, 3], scope='Conv2_3x3')
+                br4 = layers.conv2d(br4, 96, [3, 3], scope='Conv3_3x3')
             net = tf.concat(3, [br1, br2, br3, br4])
             # 35 x 35 x 384
     return net
@@ -83,15 +91,15 @@ def block_a_reduce(net, endpoints, k=192, l=224, m=256, n=384, scope='BlockReduc
     # default stride = 1
     with tf.variable_scope(scope):
         with tf.variable_scope('Br1_Pool'):
-            br1 = layers.max_pool2d(net, [3, 3], stride=2)
+            br1 = layers.max_pool2d(net, [3, 3], stride=2) #, scope='Pool1_3x3')
             # 17 x 17 x input
         with tf.variable_scope('Br2_3x3'):
-            br2 = layers.conv2d(net, n, [3, 3], stride=2)
+            br2 = layers.conv2d(net, n, [3, 3], stride=2) #, scope='Conv1_3x3')
             # 17 x 17 x n
         with tf.variable_scope('Br3_1x1_3x3Dbl'):
-            br3 = layers.conv2d(net, k, [1, 1], padding='SAME')
-            br3 = layers.conv2d(br3, l, [3, 3], padding='SAME')
-            br3 = layers.conv2d(br3, m, [3, 3], stride=2)
+            br3 = layers.conv2d(net, k, [1, 1], padding='SAME') #, scope='Conv1_1x1')
+            br3 = layers.conv2d(br3, l, [3, 3], padding='SAME') #, scope='Conv2_3x3')
+            br3 = layers.conv2d(br3, m, [3, 3], stride=2) #, scope='Conv3_3x3')
             # 17 x 17 x m
         net = tf.concat(3, [br1, br2, br3])
         # 17 x 17 x input + n + m
@@ -133,15 +141,15 @@ def block_b_reduce(net, endpoints, scope='BlockReduceB'):
     # 17 x 17 -> 8 x 8 reduce
     with tf.variable_scope(scope):
         with tf.variable_scope('Br1_Pool'):
-            br1 = layers.max_pool2d(net, [3, 3], stride=2)
+            br1 = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3')
         with tf.variable_scope('Br2_1x1_3x3'):
-            br2 = layers.conv2d(net, 192, [1, 1], padding='SAME')
-            br2 = layers.conv2d(br2, 192, [3, 3], stride=2)
+            br2 = layers.conv2d(net, 192, [1, 1], padding='SAME', scope='Conv1_1x1')
+            br2 = layers.conv2d(br2, 192, [3, 3], stride=2, scope='Conv2_3x3')
         with tf.variable_scope('Br3_1x1_1x7_7x1_3x3'):
-            br3 = layers.conv2d(net, 256, [1, 1], padding='SAME')
-            br3 = layers.conv2d(br3, 256, [1, 7], padding='SAME')
-            br3 = layers.conv2d(br3, 320, [7, 1], padding='SAME')
-            br3 = layers.conv2d(br3, 320, [3, 3], stride=2)
+            br3 = layers.conv2d(net, 256, [1, 1], padding='SAME', scope='Conv1_1x1')
+            br3 = layers.conv2d(br3, 256, [1, 7], padding='SAME', scope='Conv2_1x7')
+            br3 = layers.conv2d(br3, 320, [7, 1], padding='SAME', scope='Conv3_7x1')
+            br3 = layers.conv2d(br3, 320, [3, 3], stride=2, scope='Conv4_3x3')
         net = tf.concat(3, [br1, br2, br3])
     endpoints[scope] = net
     return net
@@ -154,20 +162,20 @@ def block_c(net, scope='BlockC'):
     with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
         with tf.variable_scope(scope):
             with tf.variable_scope('Br1_Pool_1x1'):
-                br1 = layers.avg_pool2d(net, [3, 3])
-                br1 = layers.conv2d(br1, 256, [1, 1])
+                br1 = layers.avg_pool2d(net, [3, 3], scope='Pool1_3x3')
+                br1 = layers.conv2d(br1, 256, [1, 1], scope='Conv1_1x1')
             with tf.variable_scope('Br2_1x1'):
-                br2 = layers.conv2d(net, 256, [1, 1])
+                br2 = layers.conv2d(net, 256, [1, 1], scope='Conv1_1x1')
             with tf.variable_scope('Br3_1x1_1x3_3x1'):
-                br3 = layers.conv2d(net, 384, [1, 1])
-                br3a = layers.conv2d(br3, 256, [1, 3])
-                br3b = layers.conv2d(br3, 256, [3, 1])
+                br3 = layers.conv2d(net, 384, [1, 1], scope='Conv1_1x1')
+                br3a = layers.conv2d(br3, 256, [1, 3], scope='Conv2_1x3')
+                br3b = layers.conv2d(br3, 256, [3, 1], scope='Conv3_3x1')
             with tf.variable_scope('Br4_1x1_1x7_7x1Dbl'):
-                br4 = layers.conv2d(net, 384, [1, 1])
-                br4 = layers.conv2d(br4, 448, [1, 7])
-                br4 = layers.conv2d(br4, 512, [7, 1])
-                br4a = layers.conv2d(br4, 256, [1, 7])
-                br4b = layers.conv2d(br4, 256, [7, 1])
+                br4 = layers.conv2d(net, 384, [1, 1], scope='Conv1_1x1')
+                br4 = layers.conv2d(br4, 448, [1, 7], scope='Conv2_1x7')
+                br4 = layers.conv2d(br4, 512, [7, 1], scope='Conv3_7x1')
+                br4a = layers.conv2d(br4, 256, [1, 7], scope='Conv4a_1x7')
+                br4b = layers.conv2d(br4, 256, [7, 1], scope='Conv4b_7x1')
             net = tf.concat(3, [br1, br2, br3a, br3b, br4a, br4b])
             # 8 x 8 x 1536
     return net

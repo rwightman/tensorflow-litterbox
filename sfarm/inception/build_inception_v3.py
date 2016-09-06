@@ -1,3 +1,25 @@
+# Copyright (C) 2016 Ross Wightman. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+# ==============================================================================
+# Based on original Work Copyright 2016 Google Inc. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
 """Build the Inception v3 network.
 
 The Inception v3 architecture is described in http://arxiv.org/abs/1512.00567
@@ -57,7 +79,7 @@ def block_a(net, endpoints, k=32, scope='BlockA'):
 
 
 def block_a_reduce(net, endpoints, scope='BlockReduceA'):
-    with tf.variable_scope('mixed_17x17x768a'):
+    with tf.variable_scope(scope):
         with tf.variable_scope('Br1_3x3'):
             branch3x3 = layers.conv2d(net, 384, [3, 3], stride=2, padding='VALID', scope='Conv1')
         with tf.variable_scope('Br2_3x3Dbl'):
@@ -67,7 +89,7 @@ def block_a_reduce(net, endpoints, scope='BlockReduceA'):
         with tf.variable_scope('Br3_Pool'):
             branch_pool = layers.max_pool2d(net, [3, 3], stride=2, padding='VALID', scope='Conv1')
         net = tf.concat(3, [branch3x3, branch3x3dbl, branch_pool])
-        endpoints['mixed_17x17x768a'] = net
+        endpoints[scope] = net
     return net
 
 
@@ -200,7 +222,7 @@ def build_inception_v3(
     # endpoints will collect relevant activations for external use, for example
     # summaries or losses.
     activation_fn = tf.nn.relu
-    stack_counts = [3, 5, 2]
+    stack_counts = [3, 4, 2]
     endpoints = {}
     # Inception blocks
     op_scope_net = tf.op_scope([inputs], scope, 'inception_v3')
@@ -215,54 +237,48 @@ def build_inception_v3(
 
             # mixed: 35 x 35 x 256.
             stack_a_args = [32, 64, 64]
-            net = block_a(net, endpoints, k = 32, scope='mixed_35x35x256a')
+            net = block_a(net, endpoints, k=32, scope='mixed_35x35x256a')
             # mixed_1: 35 x 35 x 288.
-            net = block_a(net, endpoints, k = 64, scope='mixed_35x36x288a')
+            net = block_a(net, endpoints, k=64, scope='mixed_35x36x288a')
             # mixed_2: 35 x 35 x 288.
-            net = block_a(net, endpoints, k = 64, scope='mixed_35x35x288b')
+            net = block_a(net, endpoints, k=64, scope='mixed_35x35x288b')
 
-            net = stack(
-                net, endpoints, fn=block_a, count=stack_counts[0],
-                scope='BlockA', activation_fn=activation_fn)
+            #net = stack(
+            #    net, endpoints, fn=block_a, count=stack_counts[0],
+            #    scope='BlockA', activation_fn=activation_fn)
             # 35 x 35 x 384
 
         with tf.variable_scope('Scale2'):
             # mixed_3: 17 x 17 x 768.
 
             stack_b_args = [128, 160, 160, 192]
-            net = block_a_reduce(net, endpoints, 'mixed_17x17x768a')
+            net = block_a_reduce(net, endpoints, scope='mixed_17x17x768a')
             # mixed4: 17 x 17 x 768.
-            net = block_b(net, endpoints, w=128, 'mixed_17x17x768b')
+            net = block_b(net, endpoints, k=128, scope='mixed_17x17x768b')
             # mixed_5: 17 x 17 x 768.
-            net = block_b(net, endpoints, w=160, 'mixed_17x17x768c')
+            net = block_b(net, endpoints, k=160, scope='mixed_17x17x768c')
             # mixed_6: 17 x 17 x 768.
-            net = block_b(net, endpoints, w=160, 'mixed_17x17x768d')
+            net = block_b(net, endpoints, k=160, scope='mixed_17x17x768d')
             # mixed_7: 17 x 17 x 768.
-            net = block_b(net, endpoints, w=192, 'mixed_17x17x768e')
+            net = block_b(net, endpoints, k=192, scope='mixed_17x17x768e')
 
-            net = stack(
-                net, endpoints, fn=block_b, count=stack_counts[1],
-                scope='BlockB', activation_fn=activation_fn)
+            #net = stack(
+            #    net, endpoints, fn=block_b, count=stack_counts[1],
+            #    scope='BlockB', activation_fn=activation_fn)
             # 17 x 17 x 896 v1, 1152 v2
-
-        with tf.variable_scope('Scale3'):
-            # mixed_8: 8 x 8 x 1280.
-            block_b_reduce(net, endpoints, 'mixed_17x17x1280a')
-            # mixed_9: 8 x 8 x 2048.
-            block_c(net, endpoints, 'mixed_8x8x2048a')
-            # mixed_10: 8 x 8 x 2048.
-            block_c(net, endpoints, 'mixed_8x8x2048b')
-
-
-
-
-
-
-
 
             # Auxiliary Head logits
             aux_logits = tf.identity(net)
+            block_aux(aux_logits, endpoints, num_classes)
 
+        with tf.variable_scope('Scale3'):
+
+            # mixed_8: 8 x 8 x 1280.
+            block_b_reduce(net, endpoints, scope='mixed_17x17x1280a')
+            # mixed_9: 8 x 8 x 2048.
+            block_c(net, endpoints, scope='mixed_8x8x2048a')
+            # mixed_10: 8 x 8 x 2048.
+            block_c(net, endpoints, scope='mixed_8x8x2048b')
 
             # Final pooling and prediction
             logits = block_output(net, endpoints, num_classes, dropout_keep_prob)

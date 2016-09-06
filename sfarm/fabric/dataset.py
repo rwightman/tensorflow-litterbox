@@ -1,4 +1,12 @@
-# Copyright 2016 Google Inc. All Rights Reserved.
+# Copyright (C) 2016 Ross Wightman. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+# ==============================================================================
+# Based on original Work Copyright 2016 Google Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,13 +20,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Small library that points to a data set.
-
-Methods of Data class:
-  data_files: Returns a python list of all (sharded) data set files.
-  num_examples_per_epoch: Returns the number of examples in the data set.
-  num_classes: Returns the number of classes in the data set.
-  reader: Return a reader for a single entry from the data set.
+"""
 """
 from __future__ import absolute_import
 from __future__ import division
