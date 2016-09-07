@@ -73,9 +73,10 @@ class ModelInception(model.Model):
             'epsilon': 0.001,
         }
         # Set weight_decay for weights in Conv and FC layers.
-        l2_regularizer = layers.l2_regularizer(0.00004)
+        weight_decay = 0.00004
+        l2_regularizer = layers.l2_regularizer(weight_decay)
         res_scale = 0.3
-        activation_fn = tf.nn.elu
+        activation_fn = tf.nn.relu  # tf.nn.elu
 
         arg_scope_weights = arg_scope(
             [layers.conv2d, layers.fully_connected],
@@ -85,8 +86,8 @@ class ModelInception(model.Model):
         arg_scope_conv = arg_scope(
             [layers.conv2d],
             activation_fn=activation_fn,
-            #normalizer_fn=layers.batch_norm,
-            #normalizer_params=batch_norm_params
+            normalizer_fn=layers.batch_norm,
+            normalizer_params=batch_norm_params
         )
         with arg_scope_weights, arg_scope_conv:
             if self.variant == ModelInception.Variant.V3:

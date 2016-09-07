@@ -20,42 +20,44 @@ from tensorflow.contrib import layers
 def block_stem(net, endpoints, scope='Stem'):
     # Stem shared by inception-v4 and inception-resnet-v2 (resnet-v1 uses simpler stem below)
     # NOTE observe endpoints of first 3 layers
-    with tf.variable_scope(scope):
-        # 299 x 299 x 3
-        net = layers.conv2d(net, 32, [3, 3], stride=2, scope='Conv1_3x3')
-        endpoints[scope + 'Conv1'] = net
-        # 149 x 149 x 32
-        net = layers.conv2d(net, 32, [3, 3], scope='Conv2_3x3')
-        endpoints[scope + 'Conv2'] = net
-        # 147 x 147 x 32
-        net = layers.conv2d(net, 64, [3, 3], padding='SAME', scope='Conv3_3x3')
-        endpoints[scope + 'Conv3'] = net
-        # 147 x 147 x 64
-        with tf.variable_scope('Br1A_Pool'):
-            br1a = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool3_3x3')
-        with tf.variable_scope('Br2A_3x3'):
-            br2a = layers.conv2d(net, 96, [3, 3], stride=2, scope='Conv4_3x3')
-        net = tf.concat(3, [br1a, br2a])
-        endpoints[scope + 'Conv4Concat'] = net
-        # 73 x 73 x 160
-        with tf.variable_scope('Br1B_1x1_3x3'):
-            br1b = layers.conv2d(net, 64, [1, 1], padding='SAME', scope='Conv5_1x1')
-            br1b = layers.conv2d(br1b, 96, [3, 3], scope='Conv6_3x3')
-        with tf.variable_scope('Br2B_1x1_7x1_1x7_3x3'):
-            br2b = layers.conv2d(net, 64, [1, 1], padding='SAME', scope='Conv5_1x1')
-            br2b = layers.conv2d(br2b, 64, [7, 1], padding='SAME', scope='Conv6_7x1')
-            br2b = layers.conv2d(br2b, 64, [1, 7], padding='SAME', scope='Conv7_1x7')
-            br2b = layers.conv2d(br2b, 96, [3, 3], scope='Conv8_3x3')
-        net = tf.concat(3, [br1b, br2b])
-        endpoints[scope + 'Conv8Concat'] = net
-        # 71 x 71 x 192
-        with tf.variable_scope('Br1C_3x3'):
-            br1c = layers.conv2d(net, 192, [3, 3], stride=2, scope='Conv9_3x3')
-        with tf.variable_scope('Br2C_Pool'):
-            br2c = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool8_3x3')
-        net = tf.concat(3, [br1c, br2c])
-        endpoints[scope + 'Conv9Concat'] = net
-        # 35x35x384
+    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='VALID'):
+        with tf.variable_scope(scope):
+            # 299 x 299 x 3
+            net = layers.conv2d(net, 32, [3, 3], stride=2, scope='Conv1_3x3/2')
+            endpoints[scope + '/Conv1'] = net
+            # 149 x 149 x 32
+            net = layers.conv2d(net, 32, [3, 3], scope='Conv2_3x3')
+            endpoints[scope + '/Conv2'] = net
+            # 147 x 147 x 32
+            net = layers.conv2d(net, 64, [3, 3], padding='SAME', scope='Conv3_3x3')
+            endpoints[scope + '/Conv3'] = net
+            # 147 x 147 x 64
+            with tf.variable_scope('Br1A_Pool'):
+                br1a = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3/2')
+            with tf.variable_scope('Br1B_3x3'):
+                br1b = layers.conv2d(net, 96, [3, 3], stride=2, scope='Conv4_3x3/2')
+            net = tf.concat(3, [br1a, br1b], name='Concat1')
+            endpoints[scope + '/Concat1'] = net
+            # 73 x 73 x 160
+            with tf.variable_scope('Br2A_3x3'):
+                br2a = layers.conv2d(net, 64, [1, 1], padding='SAME', scope='Conv5_1x1')
+                br2a = layers.conv2d(br2a, 96, [3, 3], scope='Conv6_3x3')
+            with tf.variable_scope('Br2B_7x7x3'):
+                br2b = layers.conv2d(net, 64, [1, 1], padding='SAME', scope='Conv5_1x1')
+                br2b = layers.conv2d(br2b, 64, [7, 1], padding='SAME', scope='Conv6_7x1')
+                br2b = layers.conv2d(br2b, 64, [1, 7], padding='SAME', scope='Conv7_1x7')
+                br2b = layers.conv2d(br2b, 96, [3, 3], scope='Conv8_3x3')
+            net = tf.concat(3, [br2a, br2b], name='Concat2')
+            endpoints[scope + '/Concat2'] = net
+            # 71 x 71 x 192
+            with tf.variable_scope('Br3A_3x3'):
+                br3a = layers.conv2d(net, 192, [3, 3], stride=2, scope='Conv9_3x3/2')
+            with tf.variable_scope('Br3B_Pool'):
+                br3b = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool2_3x3/2')
+            net = tf.concat(3, [br3a, br3b], name='Concat3')
+            endpoints[scope + '/Concat3'] = net
+            print('%s output shape: %s' % (scope, net.get_shape()))
+            # 35x35x384
     return net
 
 
@@ -63,22 +65,21 @@ def block_a(net, scope='BlockA'):
     # 35 x 35 x 384 grid
     # default padding = SAME
     # default stride = 1
-    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
-        with tf.variable_scope(scope):
-            with tf.variable_scope('Br1_Pool_1x1'):
-                br1 = layers.avg_pool2d(net, [3, 3], scope='Pool1_3x3')
-                br1 = layers.conv2d(br1, 96, [1, 1], scope='Conv1_1x1')
-            with tf.variable_scope('Br2_1x1'):
-                br2 = layers.conv2d(net, 96, [1, 1], scope='Conv1_1x1')
-            with tf.variable_scope('Br3_1x1_3x3'):
-                br3 = layers.conv2d(net, 64, [1, 1], scope='Conv1_1x1')
-                br3 = layers.conv2d(br3, 96, [3, 3], scope='Conv2_3x3')
-            with tf.variable_scope('Br4_1x1_3x3Dbl'):
-                br4 = layers.conv2d(net, 64, [1, 1], scope='Conv1_1x1')
-                br4 = layers.conv2d(br4, 96, [3, 3], scope='Conv2_3x3')
-                br4 = layers.conv2d(br4, 96, [3, 3], scope='Conv3_3x3')
-            net = tf.concat(3, [br1, br2, br3, br4])
-            # 35 x 35 x 384
+    with tf.variable_scope(scope):
+        with tf.variable_scope('Br1_Pool'):
+            br1 = layers.avg_pool2d(net, [3, 3], scope='Pool1_3x3')
+            br1 = layers.conv2d(br1, 96, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br2_1x1'):
+            br2 = layers.conv2d(net, 96, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br3_3x3'):
+            br3 = layers.conv2d(net, 64, [1, 1], scope='Conv1_1x1')
+            br3 = layers.conv2d(br3, 96, [3, 3], scope='Conv2_3x3')
+        with tf.variable_scope('Br4_3x3Dbl'):
+            br4 = layers.conv2d(net, 64, [1, 1], scope='Conv1_1x1')
+            br4 = layers.conv2d(br4, 96, [3, 3], scope='Conv2_3x3')
+            br4 = layers.conv2d(br4, 96, [3, 3], scope='Conv3_3x3')
+        net = tf.concat(3, [br1, br2, br3, br4], name='Concat1')
+        # 35 x 35 x 384
     return net
 
 
@@ -89,25 +90,26 @@ def block_a_reduce(net, endpoints, k=192, l=224, m=256, n=384, scope='BlockReduc
     # inception-resnet-v2: k=256, l=256, m=384, n=384
     # default padding = VALID
     # default stride = 1
-    with tf.variable_scope(scope):
-        with tf.variable_scope('Br1_Pool'):
-            br1 = layers.max_pool2d(net, [3, 3], stride=2) #, scope='Pool1_3x3')
-            # 17 x 17 x input
-        with tf.variable_scope('Br2_3x3'):
-            br2 = layers.conv2d(net, n, [3, 3], stride=2) #, scope='Conv1_3x3')
-            # 17 x 17 x n
-        with tf.variable_scope('Br3_1x1_3x3Dbl'):
-            br3 = layers.conv2d(net, k, [1, 1], padding='SAME') #, scope='Conv1_1x1')
-            br3 = layers.conv2d(br3, l, [3, 3], padding='SAME') #, scope='Conv2_3x3')
-            br3 = layers.conv2d(br3, m, [3, 3], stride=2) #, scope='Conv3_3x3')
-            # 17 x 17 x m
-        net = tf.concat(3, [br1, br2, br3])
-        # 17 x 17 x input + n + m
-        # 1024 for v4 (384 + 384 + 256)
-        # 896 for res-v1 (256 + 384 +256)
-        # 1152 for res-v2 (384 + 384 + 384)
-    endpoints[scope] = net
-    print(scope + ': ' + str(net.get_shape()))
+    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='VALID'):
+        with tf.variable_scope(scope):
+            with tf.variable_scope('Br1_Pool'):
+                br1 = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3/2')
+                # 17 x 17 x input
+            with tf.variable_scope('Br2_3x3'):
+                br2 = layers.conv2d(net, n, [3, 3], stride=2, scope='Conv1_3x3/2')
+                # 17 x 17 x n
+            with tf.variable_scope('Br3_3x3Dbl'):
+                br3 = layers.conv2d(net, k, [1, 1], padding='SAME', scope='Conv1_1x1')
+                br3 = layers.conv2d(br3, l, [3, 3], padding='SAME', scope='Conv2_3x3')
+                br3 = layers.conv2d(br3, m, [3, 3], stride=2, scope='Conv3_3x3/2')
+                # 17 x 17 x m
+            net = tf.concat(3, [br1, br2, br3], name='Concat1')
+            # 17 x 17 x input + n + m
+            # 1024 for v4 (384 + 384 + 256)
+            # 896 for res-v1 (256 + 384 +256)
+            # 1152 for res-v2 (384 + 384 + 384)
+            endpoints[scope] = net
+            print('%s output shape: %s' % (scope, net.get_shape()))
     return net
 
 
@@ -115,43 +117,44 @@ def block_b(net, scope='BlockB'):
     # 17 x 17 x 1024 grid
     # default padding = SAME
     # default stride = 1
-    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
-        with tf.variable_scope(scope):
-            with tf.variable_scope('Br1_Pool_1x1'):
-                br1 = layers.avg_pool2d(net, [3, 3])
-                br1 = layers.conv2d(br1, 128, [1, 1])
-            with tf.variable_scope('Br2_1x1'):
-                br2 = layers.conv2d(net, 384, [1, 1])
-            with tf.variable_scope('Br3_1x1_1x7_7x1'):
-                br3 = layers.conv2d(net, 192, [1, 1])
-                br3 = layers.conv2d(br3, 224, [1, 7])
-                br3 = layers.conv2d(br3, 256, [7, 1])
-            with tf.variable_scope('Br4_1x1_1x7_7x1Dbl'):
-                br4 = layers.conv2d(net, 192, [1, 1])
-                br4 = layers.conv2d(br4, 192, [1, 7])
-                br4 = layers.conv2d(br4, 224, [7, 1])
-                br4 = layers.conv2d(br4, 224, [1, 7])
-                br4 = layers.conv2d(br4, 256, [7, 1])
-            net = tf.concat(3, [br1, br2, br3, br4])
-            # 17 x 17 x 1024
+    with tf.variable_scope(scope):
+        with tf.variable_scope('Br1_Pool'):
+            br1 = layers.avg_pool2d(net, [3, 3], scope='Pool1_3x3')
+            br1 = layers.conv2d(br1, 128, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br2_1x1'):
+            br2 = layers.conv2d(net, 384, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br3_7x7'):
+            br3 = layers.conv2d(net, 192, [1, 1], scope='Conv1_1x1')
+            br3 = layers.conv2d(br3, 224, [1, 7], scope='Conv2_1x7')
+            br3 = layers.conv2d(br3, 256, [7, 1], scope='Conv3_7x1')
+        with tf.variable_scope('Br4_7x7Dbl'):
+            br4 = layers.conv2d(net, 192, [1, 1], scope='Conv1_1x1')
+            br4 = layers.conv2d(br4, 192, [1, 7], scope='Conv2_1x7')
+            br4 = layers.conv2d(br4, 224, [7, 1], scope='Conv3_7x1')
+            br4 = layers.conv2d(br4, 224, [1, 7], scope='Conv4_1x7')
+            br4 = layers.conv2d(br4, 256, [7, 1], scope='Conv5_7x1')
+        net = tf.concat(3, [br1, br2, br3, br4], name='Concat1')
+        # 17 x 17 x 1024
     return net
 
 
 def block_b_reduce(net, endpoints, scope='BlockReduceB'):
     # 17 x 17 -> 8 x 8 reduce
-    with tf.variable_scope(scope):
-        with tf.variable_scope('Br1_Pool'):
-            br1 = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3')
-        with tf.variable_scope('Br2_1x1_3x3'):
-            br2 = layers.conv2d(net, 192, [1, 1], padding='SAME', scope='Conv1_1x1')
-            br2 = layers.conv2d(br2, 192, [3, 3], stride=2, scope='Conv2_3x3')
-        with tf.variable_scope('Br3_1x1_1x7_7x1_3x3'):
-            br3 = layers.conv2d(net, 256, [1, 1], padding='SAME', scope='Conv1_1x1')
-            br3 = layers.conv2d(br3, 256, [1, 7], padding='SAME', scope='Conv2_1x7')
-            br3 = layers.conv2d(br3, 320, [7, 1], padding='SAME', scope='Conv3_7x1')
-            br3 = layers.conv2d(br3, 320, [3, 3], stride=2, scope='Conv4_3x3')
-        net = tf.concat(3, [br1, br2, br3])
-    endpoints[scope] = net
+    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='VALID'):
+        with tf.variable_scope(scope):
+            with tf.variable_scope('Br1_Pool'):
+                br1 = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3/2')
+            with tf.variable_scope('Br2_3x3'):
+                br2 = layers.conv2d(net, 192, [1, 1], padding='SAME', scope='Conv1_1x1')
+                br2 = layers.conv2d(br2, 192, [3, 3], stride=2, scope='Conv2_3x3/2')
+            with tf.variable_scope('Br3_7x7x3'):
+                br3 = layers.conv2d(net, 256, [1, 1], padding='SAME', scope='Conv1_1x1')
+                br3 = layers.conv2d(br3, 256, [1, 7], padding='SAME', scope='Conv2_1x7')
+                br3 = layers.conv2d(br3, 320, [7, 1], padding='SAME', scope='Conv3_7x1')
+                br3 = layers.conv2d(br3, 320, [3, 3], stride=2, scope='Conv4_3x3/2')
+            net = tf.concat(3, [br1, br2, br3], name='Concat1')
+            endpoints[scope] = net
+            print('%s output shape: %s' % (scope, net.get_shape()))
     return net
 
 
@@ -159,25 +162,24 @@ def block_c(net, scope='BlockC'):
     # 8 x 8 x 1536 grid
     # default padding = SAME
     # default stride = 1
-    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
-        with tf.variable_scope(scope):
-            with tf.variable_scope('Br1_Pool_1x1'):
-                br1 = layers.avg_pool2d(net, [3, 3], scope='Pool1_3x3')
-                br1 = layers.conv2d(br1, 256, [1, 1], scope='Conv1_1x1')
-            with tf.variable_scope('Br2_1x1'):
-                br2 = layers.conv2d(net, 256, [1, 1], scope='Conv1_1x1')
-            with tf.variable_scope('Br3_1x1_1x3_3x1'):
-                br3 = layers.conv2d(net, 384, [1, 1], scope='Conv1_1x1')
-                br3a = layers.conv2d(br3, 256, [1, 3], scope='Conv2_1x3')
-                br3b = layers.conv2d(br3, 256, [3, 1], scope='Conv3_3x1')
-            with tf.variable_scope('Br4_1x1_1x7_7x1Dbl'):
-                br4 = layers.conv2d(net, 384, [1, 1], scope='Conv1_1x1')
-                br4 = layers.conv2d(br4, 448, [1, 7], scope='Conv2_1x7')
-                br4 = layers.conv2d(br4, 512, [7, 1], scope='Conv3_7x1')
-                br4a = layers.conv2d(br4, 256, [1, 7], scope='Conv4a_1x7')
-                br4b = layers.conv2d(br4, 256, [7, 1], scope='Conv4b_7x1')
-            net = tf.concat(3, [br1, br2, br3a, br3b, br4a, br4b])
-            # 8 x 8 x 1536
+    with tf.variable_scope(scope):
+        with tf.variable_scope('Br1_Pool'):
+            br1 = layers.avg_pool2d(net, [3, 3], scope='Pool1_3x3')
+            br1 = layers.conv2d(br1, 256, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br2_1x1'):
+            br2 = layers.conv2d(net, 256, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br3_3x3'):
+            br3 = layers.conv2d(net, 384, [1, 1], scope='Conv1_1x1')
+            br3a = layers.conv2d(br3, 256, [1, 3], scope='Conv2_1x3')
+            br3b = layers.conv2d(br3, 256, [3, 1], scope='Conv3_3x1')
+        with tf.variable_scope('Br4_7x7Dbl'):
+            br4 = layers.conv2d(net, 384, [1, 1], scope='Conv1_1x1')
+            br4 = layers.conv2d(br4, 448, [1, 7], scope='Conv2_1x7')
+            br4 = layers.conv2d(br4, 512, [7, 1], scope='Conv3_7x1')
+            br4a = layers.conv2d(br4, 256, [1, 7], scope='Conv4a_1x7')
+            br4b = layers.conv2d(br4, 256, [7, 1], scope='Conv4b_7x1')
+        net = tf.concat(3, [br1, br2, br3a, br3b, br4a, br4b], name='Concat1')
+        # 8 x 8 x 1536
     return net
 
 
@@ -186,27 +188,28 @@ def block_stem_res(net, endpoints, scope='Stem'):
     # NOTE observe endpoints of first 3 layers
     # default padding = VALID
     # default stride = 1
-    with tf.variable_scope(scope):
-        # 299 x 299 x 3
-        net = layers.conv2d(net, 32, [3, 3], stride=2, scope='Conv1_3x3')
-        endpoints[scope + 'Conv1'] = net
-        # 149 x 149 x 32
-        net = layers.conv2d(net, 32, [3, 3], scope='Conv2_3x3')
-        endpoints[scope + 'Conv2'] = net
-        # 147 x 147 x 32
-        net = layers.conv2d(net, 64, [3, 3], padding='SAME', scope='Conv3_3x3')
-        endpoints[scope + 'Conv3'] = net
-        # 147 x 147 x 64
-        net = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool3_3x3')
-        # 73 x 73 x 64
-        net = layers.conv2d(net, 80, [1, 1], padding='SAME', scope='Conv4_1x1')
-        # 73 x 73 x 80
-        net = layers.conv2d(net, 192, [3, 3], scope='Conv5_3x3')
-        # 71 x 71 x 192
-        net = layers.conv2d(net, 256, [3, 3], stride=2, scope='Conv6_3x3')
-        # 35 x 35 x 256
-        endpoints[scope] = net
-    print('%s output shape: %s' % (scope, net.get_shape()))
+    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='VALID'):
+        with tf.variable_scope(scope):
+            # 299 x 299 x 3
+            net = layers.conv2d(net, 32, [3, 3], stride=2, scope='Conv1_3x3/2')
+            endpoints[scope + '/Conv1'] = net
+            # 149 x 149 x 32
+            net = layers.conv2d(net, 32, [3, 3], scope='Conv2_3x3')
+            endpoints[scope + '/Conv2'] = net
+            # 147 x 147 x 32
+            net = layers.conv2d(net, 64, [3, 3], padding='SAME', scope='Conv3_3x3')
+            endpoints[scope + '/Conv3'] = net
+            # 147 x 147 x 64
+            net = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3/2')
+            # 73 x 73 x 64
+            net = layers.conv2d(net, 80, [1, 1], padding='SAME', scope='Conv4_1x1')
+            # 73 x 73 x 80
+            net = layers.conv2d(net, 192, [3, 3], scope='Conv5_3x3')
+            # 71 x 71 x 192
+            net = layers.conv2d(net, 256, [3, 3], stride=2, scope='Conv6_3x3/2')
+            # 35 x 35 x 256
+            endpoints[scope] = net
+            print('%s output shape: %s' % (scope, net.get_shape()))
     return net
 
 
@@ -222,24 +225,23 @@ def block_a_res(net, ver=2, res_scale=None, scope='BlockA', activation_fn=tf.nn.
 
     # default padding = SAME
     # default stride = 1
-    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
-        with tf.variable_scope(scope):
-            shortcut = tf.identity(net)
-            if res_scale:
-                shortcut = tf.mul(shortcut, res_scale)  # scale residual
-            with tf.variable_scope('Br1_1x1'):
-                br1 = layers.conv2d(net, 32, [1, 1], scope='Conv1_1x1')
-            with tf.variable_scope('Br2_1x1_3x3'):
-                br2 = layers.conv2d(net, 32, [1, 1], scope='Conv1_1x1')
-                br2 = layers.conv2d(br2, 32, [3, 3], scope='Conv2_3x3')
-            with tf.variable_scope('Br3_1x1_3x3Dbl'):
-                br3 = layers.conv2d(net, br3_num, [1, 1], scope='Conv1_1x1')
-                br3 = layers.conv2d(br3, br3_num + 1*br3_inc, [3, 3], scope='Conv2_3x3')
-                br3 = layers.conv2d(br3, br3_num + 2*br3_inc, [3, 3], scope='Conv3_3x3')
-            net = tf.concat(3, [br1, br2, br3])
-            net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None, scope='ConvConcat_1x1')
-            net = activation_fn(tf.add(shortcut, net))
-            # 35 x 35 x 256 res-v1, 384 res-v2
+    with tf.variable_scope(scope):
+        shortcut = tf.identity(net, name='Shortcut')
+        if res_scale:
+            shortcut = tf.mul(shortcut, res_scale)  # scale residual
+        with tf.variable_scope('Br1_1x1'):
+            br1 = layers.conv2d(net, 32, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br2_3x3'):
+            br2 = layers.conv2d(net, 32, [1, 1], scope='Conv1_1x1')
+            br2 = layers.conv2d(br2, 32, [3, 3], scope='Conv2_3x3')
+        with tf.variable_scope('Br3_3x3Dbl'):
+            br3 = layers.conv2d(net, br3_num, [1, 1], scope='Conv1_1x1')
+            br3 = layers.conv2d(br3, br3_num + 1*br3_inc, [3, 3], scope='Conv2_3x3')
+            br3 = layers.conv2d(br3, br3_num + 2*br3_inc, [3, 3], scope='Conv3_3x3')
+        net = tf.concat(3, [br1, br2, br3], name='Concat1')
+        net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None, scope='Conv4_1x1')
+        net = activation_fn(tf.add(shortcut, net, name='Sum1'))
+        # 35 x 35 x 256 res-v1, 384 res-v2
     return net
 
 
@@ -258,22 +260,21 @@ def block_b_res(net, ver=2, res_scale=None, scope='BlockB', activation_fn=tf.nn.
 
     # default padding = SAME
     # default stride = 1
-    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
-        with tf.variable_scope(scope):
-            shortcut = tf.identity(net)
-            if res_scale:
-                shortcut = tf.mul(shortcut, res_scale)  # scale residual
-            with tf.variable_scope('Br1_1x1'):
-                br1 = layers.conv2d(net, br1_num, [1, 1], scope='Conv1_1x1')
-            with tf.variable_scope('Br2_1x1_1x7_7x1'):
-                br2 = layers.conv2d(net, br2_num, [1, 1], scope='Conv1_1x1')
-                br2 = layers.conv2d(br2, br2_num + 1*br2_inc, [1, 7], scope='Conv2_1x7')
-                br2 = layers.conv2d(br2, br2_num + 2*br2_inc, [7, 1], scope='Conv3_7x1')
-            net = tf.concat(3, [br1, br2])
-            net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None, scope='ConvConcat_1x1')
-            # 17 x 17 x 896 res-v1, 1152 res-v2. Typo in paper, 1152, not 1154
-            net = activation_fn(tf.add(shortcut, net))
-        return net
+    with tf.variable_scope(scope):
+        shortcut = tf.identity(net, name='Shortcut')
+        if res_scale:
+            shortcut = tf.mul(shortcut, res_scale)  # scale residual
+        with tf.variable_scope('Br1_1x1'):
+            br1 = layers.conv2d(net, br1_num, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br2_7x7'):
+            br2 = layers.conv2d(net, br2_num, [1, 1], scope='Conv1_1x1')
+            br2 = layers.conv2d(br2, br2_num + 1*br2_inc, [1, 7], scope='Conv2_1x7')
+            br2 = layers.conv2d(br2, br2_num + 2*br2_inc, [7, 1], scope='Conv3_7x1')
+        net = tf.concat(3, [br1, br2], name='Concat1')
+        net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None, scope='Conv4_1x1')
+        # 17 x 17 x 896 res-v1, 1152 res-v2. Typo in paper, 1152, not 1154
+        net = activation_fn(tf.add(shortcut, net, name='Sum1'))
+    return net
 
 
 def block_b_reduce_res(net, endpoints, ver=2, scope='BlockReduceB'):
@@ -289,23 +290,24 @@ def block_b_reduce_res(net, endpoints, ver=2, scope='BlockReduceB'):
         br3_inc = 32
         br4_inc = 32
 
-    with tf.variable_scope(scope):
-        with tf.variable_scope('Br1_Pool'):
-            br1 = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3')
-        with tf.variable_scope('Br2_1x1_3x3'):
-            br2 = layers.conv2d(net, 256, [1, 1], padding='SAME', scope='Conv1_1x1')
-            br2 = layers.conv2d(br2, 384, [3, 3], stride=2, scope='Conv2_3x3')
-        with tf.variable_scope('Br3_1x1_3x3'):
-            br3 = layers.conv2d(net, br3_num, [1, 1], padding='SAME', scope='Conv1_1x1')
-            br3 = layers.conv2d(br3, br3_num + br3_inc, [3, 3], stride=2, scope='Conv2_3x3')
-        with tf.variable_scope('Br4_1x1_3x3Dbl'):
-            br4 = layers.conv2d(net, br4_num, [1, 1], padding='SAME', scope='Conv1_1x1')
-            br4 = layers.conv2d(br4, br4_num + 1*br4_inc, [3, 3], padding='SAME', scope='Conv2_3x3')
-            br4 = layers.conv2d(br4, br4_num + 2*br4_inc, [3, 3], stride=2, scope='Conv3_3x3')
-        net = tf.concat(3, [br1, br2, br3, br4])
-        # 8 x 8 x 1792 v1, 2144 v2 (paper indicates 2048 but only get this if we use a v1 config for this block)
-    endpoints[scope] = net
-    print('%s output shape: %s' % (scope, net.get_shape()))
+    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='VALID'):
+        with tf.variable_scope(scope):
+            with tf.variable_scope('Br1_Pool'):
+                br1 = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3/2')
+            with tf.variable_scope('Br2_3x3'):
+                br2 = layers.conv2d(net, 256, [1, 1], padding='SAME', scope='Conv1_1x1')
+                br2 = layers.conv2d(br2, 384, [3, 3], stride=2, scope='Conv2_3x3/2')
+            with tf.variable_scope('Br3_3x3'):
+                br3 = layers.conv2d(net, br3_num, [1, 1], padding='SAME', scope='Conv1_1x1')
+                br3 = layers.conv2d(br3, br3_num + br3_inc, [3, 3], stride=2, scope='Conv2_3x3/2')
+            with tf.variable_scope('Br4_3x3Dbl'):
+                br4 = layers.conv2d(net, br4_num, [1, 1], padding='SAME', scope='Conv1_1x1')
+                br4 = layers.conv2d(br4, br4_num + 1*br4_inc, [3, 3], padding='SAME', scope='Conv2_3x3')
+                br4 = layers.conv2d(br4, br4_num + 2*br4_inc, [3, 3], stride=2, scope='Conv3_3x3/2')
+            net = tf.concat(3, [br1, br2, br3, br4], name='Concat1')
+            # 8 x 8 x 1792 v1, 2144 v2 (paper indicates 2048 but only get this if we use a v1 config for this block)
+            endpoints[scope] = net
+            print('%s output shape: %s' % (scope, net.get_shape()))
     return net
 
 
@@ -321,21 +323,20 @@ def block_c_res(net, ver=2, res_scale=None, scope='BlockC', activation_fn=tf.nn.
 
     # default padding = SAME
     # default stride = 1
-    with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='SAME'):
-        with tf.variable_scope(scope):
-            shortcut = tf.identity(net)
-            if res_scale:
-                shortcut = tf.mul(shortcut, res_scale)  # scale residual
-            with tf.variable_scope('Br1_1x1'):
-                br1 = layers.conv2d(net, 192, [1, 1], scope='Conv1_1x1')
-            with tf.variable_scope('Br2_1x1_1x3_3x1'):
-                br2 = layers.conv2d(net, br2_num, [1, 1], scope='Conv1_1x1')
-                br2 = layers.conv2d(br2, br2_num + 1*br2_inc, [1, 3], scope='Conv2_1x3')
-                br2 = layers.conv2d(br2, br2_num + 2*br2_inc, [3, 1], scope='Conv3_3x1')
-            net = tf.concat(3, [br1, br2])
-            net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None, scope='ConvConcat')
-            # 1792 res-1, 2144 (2048?) res-2
-            net = activation_fn(tf.add(shortcut, net))
+    with tf.variable_scope(scope):
+        shortcut = tf.identity(net, name='Shortcut')
+        if res_scale:
+            shortcut = tf.mul(shortcut, res_scale)  # scale residual
+        with tf.variable_scope('Br1_1x1'):
+            br1 = layers.conv2d(net, 192, [1, 1], scope='Conv1_1x1')
+        with tf.variable_scope('Br2_3x3'):
+            br2 = layers.conv2d(net, br2_num, [1, 1], scope='Conv1_1x1')
+            br2 = layers.conv2d(br2, br2_num + 1*br2_inc, [1, 3], scope='Conv2_1x3')
+            br2 = layers.conv2d(br2, br2_num + 2*br2_inc, [3, 1], scope='Conv3_3x1')
+        net = tf.concat(3, [br1, br2], name='Concat1')
+        net = layers.conv2d(net, shortcut.get_shape()[-1], [1, 1], activation_fn=None, scope='Conv4_1x1')
+        # 1792 res-1, 2144 (2048?) res-2
+        net = activation_fn(tf.add(shortcut, net, name='Sum1'))
     return net
 
 
@@ -343,8 +344,8 @@ def block_output(net, endpoints, num_classes=1000, dropout_keep_prob=0.5, scope=
     with tf.variable_scope(scope):
         # 8 x 8 x 1536
         shape = net.get_shape()
-        net = layers.avg_pool2d(net, shape[1:3])
-        endpoints['OutputAvgPool'] = net
+        net = layers.avg_pool2d(net, shape[1:3], padding='VALID', scope='Pool1_Global')
+        endpoints['Output/Pool1'] = net
         # 1 x 1 x 1536
         net = layers.dropout(net, dropout_keep_prob)
         net = layers.flatten(net)
@@ -389,7 +390,7 @@ def build_inception_v4(
     endpoints = {}
     op_scope_net = tf.op_scope([inputs], scope, 'Inception_v4')
     arg_scope_train = arg_scope([layers.batch_norm, layers.dropout], is_training=is_training)
-    arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='VALID')
+    arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME')
     with op_scope_net, arg_scope_train, arg_scope_conv:
 
         net = block_stem(inputs, endpoints)
@@ -449,7 +450,7 @@ def build_inception_resnet(
 
     op_scope_net = tf.op_scope([inputs], scope, network_name)
     arg_scope_train = arg_scope([layers.batch_norm, layers.dropout], is_training=is_training)
-    arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='VALID')
+    arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME')
     with op_scope_net, arg_scope_train, arg_scope_conv:
 
         net = block_stem_res(inputs, endpoints) if ver == 1 else block_stem(inputs, endpoints)

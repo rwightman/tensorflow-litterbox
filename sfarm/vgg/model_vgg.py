@@ -20,6 +20,51 @@ from tensorflow.python.ops import math_ops
 FLAGS = tf.app.flags.FLAGS
 
 
+def block_a(net, endpoints, d=64, scope='BlockA'):
+    with tf.variable_scope(scope):
+        net = endpoints[scope+'/Conv1'] = layers.conv2d(net, d, [3, 3], scope='Conv1_3x3')
+        net = endpoints[scope+'/Conv2'] = layers.conv2d(net, d, [3, 3], scope='Conv2_3x3')
+        net = endpoints[scope+'/Pool1'] = layers.max_pool2d(net, [2, 2], stride=2, scope='Pool1_2x2/2')
+    return net
+
+
+def block_b(net, endpoints, d=256, scope='BlockB'):
+    with tf.variable_scope(scope):
+        net = endpoints[scope+'/Conv1'] = layers.conv2d(net, d, [3, 3], scope='Conv1_3x3')
+        net = endpoints[scope+'/Conv2'] = layers.conv2d(net, d, [3, 3], scope='Conv2_3x3')
+        net = endpoints[scope+'/Conv3'] = layers.conv2d(net, d, [3, 3], scope='Conv3_3x3')
+        net = endpoints[scope+'/Pool1'] = layers.max_pool2d(net, [2, 2], stride=2, scope='Pool1_2x2/2')
+    return net
+
+
+def block_c(net, endpoints, d=256, scope='BlockC'):
+    with tf.variable_scope(scope):
+        net = endpoints[scope+'/Conv1'] = layers.conv2d(net, d, [3, 3], scope='Conv1_3x3')
+        net = endpoints[scope+'/Conv2'] = layers.conv2d(net, d, [3, 3], scope='Conv2_3x3')
+        net = endpoints[scope+'/Conv3'] = layers.conv2d(net, d, [3, 3], scope='Conv3_3x3')
+        net = endpoints[scope+'/Conv4'] = layers.conv2d(net, d, [3, 3], scope='Conv4_3x3')
+        net = endpoints[scope+'/Pool1'] = layers.max_pool2d(net, [2, 2], stride=2, scope='Pool1_2x2/2')
+    return net
+
+
+def block_output(net, endpoints, num_classes, dropout_keep_prob=0.5):
+    with tf.variable_scope('Output'):
+        net = layers.flatten(net, scope='Flatten')
+
+        # 7 x 7 x 512
+        net = layers.fully_connected(net, 4096, scope='Fc1')
+        net = endpoints['Output/Fc1'] = layers.dropout(net, dropout_keep_prob, scope='Dropout1')
+
+        # 1 x 1 x 4096
+        net = layers.fully_connected(net, 4096, scope='Fc2')
+        net = endpoints['Output/Fc2'] = layers.dropout(net, dropout_keep_prob, scope='Dropout2')
+
+        logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='Logits')
+        # 1 x 1 x num_classes
+        endpoints['Logits'] = logits
+    return logits
+
+
 def build_vgg16(
         inputs,
         dropout_keep_prob=0.5,
@@ -36,68 +81,54 @@ def build_vgg16(
                     [layers.conv2d, layers.max_pool2d], 
                     stride=1,
                     padding='SAME'):
-                # 224 x 224 x 3
-                endpoints['conv1_1'] = layers.conv2d(inputs, 64, [3, 3], scope='conv1_1')
-                # 224 x 224 x 64
-                endpoints['conv1_2'] = layers.conv2d(endpoints['conv1_1'], 64, [3, 3], scope='conv1_2')
-                endpoints['pool1'] = layers.max_pool2d(endpoints['conv1_2'], [2, 2], stride=2, scope='pool1')
 
-                # 112 x 112 x 64
-                endpoints['conv2_1'] = layers.conv2d(endpoints['pool1'], 128, [3, 3], scope='conv2_1')
-                # 112 x 112 x 128
-                endpoints['conv2_2'] = layers.conv2d(endpoints['conv2_1'], 128, [3, 3], scope='conv2_2')
-                endpoints['pool2'] = layers.max_pool2d(endpoints['conv2_2'], [2, 2], stride=2, scope='pool2')
+                net = block_a(inputs, endpoints, d=64, scope='Scale1')
+                net = block_a(net, endpoints, d=128, scope='Scale2')
+                net = block_b(net, endpoints, d=256, scope='Scale3')
+                net = block_b(net, endpoints, d=512, scope='Scale4')
+                net = block_b(net, endpoints, d=512, scope='Scale5')
+                logits = block_output(net, endpoints, num_classes, dropout_keep_prob)
 
-                # 56 x 56 x 128
-                endpoints['conv3_1'] = layers.conv2d(endpoints['pool2'], 256, [3, 3], scope='conv3_1')
-                # 56 x 56 x 256
-                endpoints['conv3_2'] = layers.conv2d(endpoints['conv3_1'], 256, [3, 3], scope='conv3_2')
-                endpoints['conv3_3'] = layers.conv2d(endpoints['conv3_2'], 256, [3, 3], scope='conv3_3')
-                endpoints['pool3'] = layers.max_pool2d(endpoints['conv3_3'], [2, 2], stride=2, scope='pool3')
-
-                # 28 x 28 x 256
-                endpoints['conv4_1'] = layers.conv2d(endpoints['pool3'], 512, [3, 3], scope='conv4_1')
-                # 28 x 28 x 512
-                endpoints['conv4_2'] = layers.conv2d(endpoints['conv4_1'], 512, [3, 3], scope='conv4_2')
-                endpoints['conv4_3'] = layers.conv2d(endpoints['conv4_2'], 512, [3, 3], scope='conv4_3')
-                endpoints['pool4'] = layers.max_pool2d(endpoints['conv4_3'], [2, 2], stride=2, scope='pool4')
-
-                # 14 x 14 x 512
-                endpoints['conv5_1'] = layers.conv2d(endpoints['pool4'], 512, [3, 3], scope='conv5_1')
-                # 14 x 14 x 512
-                endpoints['conv5_2'] = layers.conv2d(endpoints['conv5_1'], 512, [3, 3], scope='conv5_2')
-                endpoints['conv5_3'] = layers.conv2d(endpoints['conv5_2'], 512, [3, 3], scope='conv5_3')
-                net = layers.max_pool2d(endpoints['conv5_3'], [2, 2], stride=2, scope='pool5')
-                endpoints['pool5'] = net
-
-                net = layers.flatten(net, scope='flatten')
-
-                # 7 x 7 x 512
-                net = layers.fully_connected(net, 4096, scope='fc6')
-                net = layers.dropout(net, dropout_keep_prob, scope='fc6_dropout')
-                endpoints['fc6'] = net
-
-                # 1 x 1 x 4096
-                net = layers.fully_connected(net, 4096, scope='fc7')
-                net = layers.dropout(net, dropout_keep_prob, scope='fc7_dropout')
-                endpoints['fc7'] = net
-
-                with tf.variable_scope('logits'):
-                    logits = layers.fully_connected(net, num_classes, activation_fn=None, scope='logits')
-                    # 1 x 1 x num_classes
-                    endpoints['logits'] = logits
-                    endpoints['predictions'] = tf.nn.softmax(logits, name='predictions')
-
-                    return logits, endpoints
+                endpoints['Predictions'] = tf.nn.softmax(logits, name='Predictions')
+                return logits, endpoints
 
 
-class ModelVgg16(model.Model):
+def build_vgg19(
+        inputs,
+        dropout_keep_prob=0.5,
+        num_classes=1000,
+        is_training=True,
+        scope=''):
+    """Blah"""
+
+    endpoints = {}
+    with tf.op_scope([inputs], scope, 'vgg19'):
+        with arg_scope(
+                [layers.batch_norm, layers.dropout], is_training=is_training):
+            with arg_scope(
+                    [layers.conv2d, layers.max_pool2d],
+                    stride=1,
+                    padding='SAME'):
+
+                net = block_a(inputs, endpoints, d=64, scope='Scale1')
+                net = block_a(net, endpoints, d=128, scope='Scale2')
+                net = block_c(net, endpoints, d=256, scope='Scale3')
+                net = block_c(net, endpoints, d=512, scope='Scale4')
+                net = block_c(net, endpoints, d=512, scope='Scale5')
+                logits = block_output(net, endpoints, num_classes, dropout_keep_prob)
+
+                endpoints['Predictions'] = tf.nn.softmax(logits, name='Predictions')
+                return logits, endpoints
+
+
+class ModelVgg(model.Model):
 
     # The decay to use for the moving average.
     MOVING_AVERAGE_DECAY = 0.9999
 
-    def __init__(self):
-        super(ModelVgg16, self).__init__()
+    def __init__(self, layers=16):
+        super(ModelVgg, self).__init__()
+        self._layers = layers
 
     # Input should be an rgb image [batch, height, width, 3]
     # values scaled [0, 1]
@@ -127,11 +158,18 @@ class ModelVgg16(model.Model):
                     activation_fn=tf.nn.relu
             ):
 
-                logits, endpoints = build_vgg16(
-                    inputs,
-                    num_classes=num_classes,
-                    is_training=is_training,
-                    scope=scope)
+                if self._layers == 19:
+                    logits, endpoints = build_vgg19(
+                        inputs,
+                        num_classes=num_classes,
+                        is_training=is_training,
+                        scope=scope)
+                else:
+                    logits, endpoints = build_vgg16(
+                        inputs,
+                        num_classes=num_classes,
+                        is_training=is_training,
+                        scope=scope)
 
         self.add_tower(
             name=scope,

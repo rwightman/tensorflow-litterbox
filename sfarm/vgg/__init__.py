@@ -1,1 +1,1 @@
-from vgg.model_vgg16 import ModelVgg16
+from vgg.model_vgg import ModelVgg

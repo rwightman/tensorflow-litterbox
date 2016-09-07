@@ -25,8 +25,8 @@ def calc_num_filters_out(num_filters_internal, bottleneck=False):
 
 def stem(inputs, endpoints, num_filters=64):
     with tf.variable_scope('Stem'):
-        net = layers.conv2d(inputs, num_filters, [7, 7], stride=2, scope='Conv1')
-        net = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1')
+        net = layers.conv2d(inputs, num_filters, [7, 7], stride=2, scope='Conv1_7x7')
+        net = layers.max_pool2d(net, [3, 3], stride=2, scope='Pool1_3x3')
     endpoints['Stem'] = net
     print("Stem output size: ", net.get_shape())
     return net
@@ -82,7 +82,7 @@ def block_preact(net, num_filters_internal, block_stride,
             if num_filters_out != num_filters_in or block_stride != 1:
                 shortcut = my_layers.preact_conv2d(
                     net, num_filters_out, [1, 1], stride=block_stride,
-                    normalizer_fn=None, padding='VALID', scope='Conv_1x1')
+                    normalizer_fn=None, padding='VALID', scope='Conv1_1x1')
             else:
                 shortcut = tf.identity(net)
 
@@ -122,8 +122,9 @@ def output(net, endpoints, num_classes, pre_act=False):
     with tf.variable_scope('Output'):
         if pre_act:
             net = layers.batch_norm(net, activation_fn=tf.nn.relu)
-        net = layers.avg_pool2d(net, [7, 7])
-        endpoints['OutputAvgPool'] = net
+        shape = net.get_shape()
+        net = layers.avg_pool2d(net, shape[1:3], scope='Pool1_Global')
+        endpoints['OutputPool1'] = net
         net = layers.flatten(net)
         net = layers.fully_connected(net, num_classes, activation_fn=None, scope='Logits')
         endpoints['Logits'] = net
