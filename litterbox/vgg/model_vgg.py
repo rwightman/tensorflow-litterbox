@@ -184,11 +184,6 @@ class ModelVgg(model.Model):
 
     def add_tower_loss(self, labels, batch_size=None, scope=None):
         """Adds all losses for the model.
-
-        Note the final loss is not returned. Instead, the list of losses are collected
-        by slim.losses. The losses are accumulated in tower_loss() and summed to
-        calculate the total loss.
-
         Args:
           logits: List of logits from inference(). Each entry is a 2-D float Tensor.
           labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
