@@ -8,15 +8,15 @@ My initial motivation for creating this codebase was to compete in the Kaggle St
 ## Models
 The codebase includes several models:
  - VGG 16/19
- - ResNet (Standard Imagenet depths 18-200, width parameterization) 
+ - ResNet (Standard Imagenet depths 18-200, pre-activation, width parameterization) 
  - Inception V3 (based on Google's original Inception V3 in the models repo)
- - Inception V4 + Inception-Resnet-V1 and Inception-Resnet-V2
+ - Inception V4, Inception-Resnet-V1, and Inception-Resnet-V2
  
 I have used the tf.contrib layers that the latest TF-Slim is based on. As a result, an up to date version of Tensorflow is required (0.10 or newer, 0.9 may work).
 
 I've managed to get all of the models training to the point where they're converging but have yet to run any long enough on an Imagenet scale dataset to the point where results are competitive.
 
-If you are looking for the latest models in Tensorflow with competitive pre-trained weights, Google released some last week. I would recommending checking them out here: https://research.googleblog.com/2016/08/improving-inception-and-image.html
+If you are looking for the latest models in Tensorflow with competitive pre-trained weights, Google released some of their own last week. I would recommending checking them out here: https://research.googleblog.com/2016/08/improving-inception-and-image.html
 
 ## TODO
  - Add to this document
