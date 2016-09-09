@@ -5,6 +5,10 @@ This repository started from the Inception-V3 codebase in Google's tensorflow mo
 
 My initial motivation for creating this codebase was to compete in the Kaggle State Farm Distracted Driver competition. I ended up switching to Torch and Facebook's fb.resnet.torch implementation for the competition. However, since then I've been slowly working on this code base with the goal of learning the ins and outs of Tensorflow and developing a train/eval/prediction framework and models to use for another project.
 
+All devolpment on this codebase has been done in Python 3. Python 2.7 compatibility has not been tested or kept in mind. Several fixes were made to the original inception model codebase to make them work in Python 3, especially for the data import scripts.
+
+A recent version of Tensorflow is required. 0.10 or newer recommended. 
+
 ## Models
 The codebase includes several models:
  - VGG 16/19
@@ -12,7 +16,7 @@ The codebase includes several models:
  - Inception V3 (based on Google's original Inception V3 in the models repo)
  - Inception V4, Inception-Resnet-V1, and Inception-Resnet-V2
  
-I have used the tf.contrib layers that the latest TF-Slim is based on. As a result, an up to date version of Tensorflow is required (0.10 or newer, 0.9 may work).
+I have used the tf.contrib layers that the latest TF-Slim is based on and made extensive used of variable scoping and the arg_scoping functionality.
 
 I've managed to get all of the models training to the point where they're converging but have yet to run any long enough on an Imagenet scale dataset to the point where results are competitive.
 
