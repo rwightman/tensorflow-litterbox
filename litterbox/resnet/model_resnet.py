@@ -6,7 +6,10 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 # ==============================================================================
-"""
+""" ResNet Model
+    * ResNet 18, 34, 50, 101, 152 as per https://arxiv.org/abs/1512.03385
+    * ResNet 200 as per https://arxiv.org/pdf/1603.05027v3.pdf
+    * Width ideas from https://arxiv.org/pdf/1605.07146.pdf
 """
 from .build_resnet import build_resnet
 

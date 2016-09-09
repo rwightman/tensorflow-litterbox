@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 # ==============================================================================
-"""The Inception network family (v3, V4, resnet-V1, resnetV2).
+"""The Inception model family (v3, V4, Inception-Resnet-V1, Inception-Resnet-V2).
 """
 from __future__ import absolute_import
 from __future__ import division

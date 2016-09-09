@@ -6,7 +6,9 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 # ==============================================================================
-"""The Inception v4 network.
+""" The Inception v4 network.
+    Implementation of Inception V4, Inception-Resnet-V1, Inception-Resnet-V2
+    based on https://arxiv.org/abs/1602.07261
 """
 from __future__ import absolute_import
 from __future__ import division

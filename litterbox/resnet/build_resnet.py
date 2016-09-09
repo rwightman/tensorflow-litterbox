@@ -6,7 +6,7 @@
 #
 #     http://www.apache.org/licenses/LICENSE-2.0
 # ==============================================================================
-"""
+""" ResNet building blocks for ResNet models
 """
 import layers as my_layers
 
