@@ -5,7 +5,7 @@ This repository started from the Inception-V3 codebase in Google's tensorflow mo
 
 My initial motivation for creating this codebase was to compete in the Kaggle State Farm Distracted Driver competition. I ended up switching to Torch and Facebook's fb.resnet.torch implementation for the competition. However, since then I've been slowly working on this code base with the goal of learning the ins and outs of Tensorflow and developing a train/eval/prediction framework and models to use for another project.
 
-All devolpment on this codebase has been done in Python 3. Python 2.7 compatibility has not been tested or kept in mind. Several fixes were made to the original inception model codebase to make them work in Python 3, especially for the data import scripts.
+All development on this codebase has been done in Python 3. Python 2.7 compatibility has not been tested or kept in mind. Several fixes were made to the original inception model codebase to make them work in Python 3, especially for the data import scripts.
 
 A recent version of Tensorflow is required. 0.10 or newer recommended. 
 
@@ -27,6 +27,7 @@ If you are looking for the latest models in Tensorflow with competitive pre-trai
  - Show usage examples for various components
  - Add/update code comments and docstrings
  - Verify that multi-tower training still works and fix if not
+ - Importing framework for pulling in pretrained weights from Torch/Caffe and other TF models
  - Add support for smaller image datasets (ie Cifar/Tiny Imagenet)
  - Add bounding-box / segmentation mask support with related models
  - Add MS Coco dataset support for above
