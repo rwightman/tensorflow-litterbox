@@ -99,6 +99,7 @@ class OptParamScheduler(object):
     def __init__(self,
                  global_step_tensor,
                  num_steps_per_epoch=None,
+                 override_learning_rate=None,
                  model_default_type=None,
                  model_default_params=None):
 
@@ -126,7 +127,6 @@ class OptParamScheduler(object):
 
         if self.opt_type == 'default':
             # If default params for model specified,
-            # merge command line params appropriately
             self.opt_type = model_default_type  # 'momentum' if not specified
             self._opt_params = default_params[self.opt_type]
             if model_default_params:
@@ -140,22 +140,16 @@ class OptParamScheduler(object):
             self.learning_rate_initial = self._opt_params['learning_rate']
 
         self.global_step_tensor = global_step_tensor
-        self.learning_rate_tensor = None
-        self.opt = None
-
-    def initialize(self, override_learning_rate=None):
 
         if isinstance(override_learning_rate, tf.Variable):
-            self.learning_rate_tensor = override_learning_rate  # override
+            self.learning_rate_tensor = override_learning_rate
         else:
             self._create_lr_schedule()
 
-        # Override the learning rate passed to optimizer with tensor version
+        # Replace the learning rate passed to optimizer with tensor version
         self._opt_params['learning_rate'] = self.learning_rate_tensor
 
         self._create_optimizer()
-
-        return self.opt
 
     def _create_optimizer(self):
 

@@ -175,7 +175,7 @@ def _build_train_graph(feed, model):
         global_step_tensor=global_step,
         num_steps_per_epoch=feed.num_batches_per_epoch())
 
-    opt = opt_param_sched.initialize()
+    opt = opt_param_sched.opt
 
     # Get images and labels for ImageNet and split the batch across GPUs.
     assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
