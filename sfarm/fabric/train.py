@@ -38,6 +38,7 @@ import tensorflow as tf
 
 from .image_processing import image_preprocess
 from .feed import Feed
+from .opt_param_scheduler import OptParamScheduler
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -65,35 +66,11 @@ tf.app.flags.DEFINE_string('pretrained_model_path', '',
                            """If specified, restore this pretrained model """
                            """before beginning any training.""")
 
-# **IMPORTANT**
-# Please note that this learning rate schedule is heavily dependent on the
-# hardware architecture, batch size and any changes to the model architecture
-# specification. Selecting a finely tuned learning rate schedule is an
-# empirical process that requires some experimentation. Please see README.md
-# more guidance and discussion.
-#
-# With 8 Tesla K40's and a batch size = 256, the following setup achieves
-# precision@1 = 73.5% after 100 hours and 100K steps (20 epochs).
-# Learning rate decay factor selected from http://arxiv.org/abs/1404.5997.
-tf.app.flags.DEFINE_float('learning_rate', 0.1,
-                          """Initial learning rate.""")
-
-tf.app.flags.DEFINE_float('num_epochs_per_decay', 25.0,
-                          """Epochs after which learning rate decays.""")
-
-tf.app.flags.DEFINE_float('learning_rate_decay_factor', 0.2,
-                          """Learning rate decay factor.""")
-
 tf.app.flags.DEFINE_float('grad_clip', 5.0,
                           """Clip gradients to this value.""")
 
 tf.app.flags.DEFINE_string('subset', 'train',
                            """Either 'validation' or 'train'.""")
-
-# Constants dictating the learning rate schedule.
-RMSPROP_DECAY = 0.9  # Decay term for RMSProp.
-RMSPROP_MOMENTUM = 0.9  # Momentum in RMSProp.
-RMSPROP_EPSILON = 1.0  # Epsilon term for RMSProp.
 
 
 def _add_tower_loss(images, labels, num_classes, model, scope):
@@ -194,26 +171,11 @@ def _average_gradients(tower_grads):
 def _build_train_graph(feed, model):
     global_step = tf.contrib.framework.get_or_create_global_step()
 
-    # Calculate the learning rate schedule.
-    decay_steps = int(feed.num_batches_per_epoch() * FLAGS.num_epochs_per_decay)
+    opt_param_sched = OptParamScheduler(
+        global_step_tensor=global_step,
+        num_steps_per_epoch=feed.num_batches_per_epoch())
 
-    # Decay the learning rate exponentially based on the number of steps.
-    lr = tf.train.exponential_decay(
-        FLAGS.learning_rate,
-        global_step,
-        decay_steps,
-        FLAGS.learning_rate_decay_factor,
-        staircase=True)
-
-    # Create an optimizer that performs gradient descent.
-    #opt = tf.train.RMSPropOptimizer(
-    #    lr, RMSPROP_DECAY, momentum=RMSPROP_MOMENTUM, epsilon=RMSPROP_EPSILON)
-
-    # opt = tf.train.AdadeltaOptimizer(lr, epsilon=1e-6)
-
-    # opt = tf.train.AdamOptimizer(lr, epsilon=.01)
-
-    opt = tf.train.MomentumOptimizer(lr, 0.9)
+    opt = opt_param_sched.initialize()
 
     # Get images and labels for ImageNet and split the batch across GPUs.
     assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
@@ -277,7 +239,7 @@ def _build_train_graph(feed, model):
     summaries.extend(input_summaries)
 
     # Add a summary to track the learning rate.
-    summaries.append(tf.scalar_summary('learning_rate', lr))
+    summaries.append(tf.scalar_summary('learning_rate', opt_param_sched.learning_rate_tensor))
 
     # Add histograms for gradients.
     for grad, var in grads:

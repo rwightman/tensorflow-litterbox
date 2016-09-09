@@ -105,7 +105,7 @@ class Feed(object):
         self.caffe_fmt = True if FLAGS.image_fmt == 'caffe' else False
 
     def num_batches_per_epoch(self):
-        return self.dataset.num_examples_per_epoch() / self.batch_size
+        return math.ceil(self.dataset.num_examples_per_epoch() / self.batch_size)
 
     def num_examples_per_epoch(self):
         return self.dataset.num_examples_per_epoch()

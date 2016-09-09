@@ -16,7 +16,7 @@ import tensorflow as tf
 
 from inception import ModelInception
 from resnet import ModelResnet
-from vgg import ModelVgg16
+from vgg import ModelVgg
 from fabric.train import *
 from imagenet_data import *
 
@@ -27,7 +27,8 @@ def main(_):
     dataset = ImagenetData(subset=FLAGS.subset)
     assert dataset.data_files()
     model = ModelInception(variant=ModelInception.Variant.ResnetV2)
-    #model = ModelResnet(num_layers=18, width_factor=1)
+    #model = ModelResnet(num_layers=50, width_factor=1)
+    #model = ModelVgg(19)
 
     if not tf.gfile.Exists(FLAGS.train_dir):
         tf.gfile.MakeDirs(FLAGS.train_dir)

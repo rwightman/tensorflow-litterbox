@@ -184,3 +184,13 @@ class ModelInception(model.Model):
         loss = math_ops.reduce_mean(cross_entropy)
         return loss
 
+    @staticmethod
+    def default_optimizer_params(self):
+        opt_type = 'RMSProp'
+        # Default params as in Google's inception v3 model
+        opt_params = {
+            'decay': 0.9,
+            'momentum': 0.9,
+            'epsilon': 1.0
+        }
+        return opt_type, opt_params

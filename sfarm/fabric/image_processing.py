@@ -165,7 +165,7 @@ def distort_affine_skimage(image, angle=10, random_state=None):
     return distorted_image.astype(np.float32)
 
 
-def distort_elastic_cv2(image, alpha=90, sigma=30, random_state=None):
+def distort_elastic_cv2(image, alpha=80, sigma=20, random_state=None):
     """Elastic deformation of images as per [Simard2003].
     """
     if random_state is None:
