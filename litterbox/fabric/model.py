@@ -105,7 +105,7 @@ class Model(object):
                 activation_summary(act, Model.TOWER_NAME)
 
     @staticmethod
-    def default_optimizer_params(self):
+    def default_optimizer_params():
         opt_type = 'momentum'
         opt_params = {
             'learning_rate': 0.1,
@@ -115,6 +115,6 @@ class Model(object):
         return opt_type, opt_params
 
     @staticmethod
-    def scope_name(self, tower_id=0):
+    def scope_name(tower_id=0):
         return '%s_%d' % (Model.TOWER_NAME, tower_id)
 
