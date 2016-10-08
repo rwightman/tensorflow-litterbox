@@ -1,1 +1,0 @@
-from inception.model_inception import ModelInception

@@ -12,12 +12,9 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow as tf
-
-from inception import ModelInception
-from resnet import ModelResnet
 from fabric.eval import *
 from imagenet_data import *
+from models import ModelInception
 
 FLAGS = tf.app.flags.FLAGS
 

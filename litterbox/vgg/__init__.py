@@ -1,1 +1,0 @@
-from vgg.model_vgg import ModelVgg
