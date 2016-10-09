@@ -76,7 +76,7 @@ def decode_jpeg(image_buffer, depth=3, scope=None):
     Returns:
       3-D float Tensor with values ranging from [0, 1).
     """
-    with tf.op_scope([image_buffer], scope, 'decode_jpeg'):
+    with tf.name_scope(scope, 'decode_jpeg', [image_buffer]):
         # Decode the string as an RGB JPEG.
         # Note that the resulting image contains an unknown height and width
         # that is set dynamically by decode_jpeg. In other words, the height
@@ -105,7 +105,7 @@ def distort_color(image, thread_id=0, scope=None):
     Returns:
       color-distorted image
     """
-    with tf.op_scope([image], scope, 'distort_color'):
+    with tf.name_scope(scope, 'distort_color', [image]):
         color_ordering = thread_id % 2
 
         if color_ordering == 0:
@@ -225,7 +225,7 @@ def distort_image(image, height, width, bbox=None, thread_id=0, scope=None):
     elastic_distortion = True
     affine_distortion = True
 
-    with tf.op_scope([image, height, width, bbox], scope, 'distort_image'):
+    with tf.name_scope(scope, 'distort_image', [image, height, width, bbox]):
         # Each bounding box has shape [1, num_boxes, box coords] and
         # the coordinates are ordered [ymin, xmin, ymax, xmax].
 
@@ -270,7 +270,7 @@ def distort_image(image, height, width, bbox=None, thread_id=0, scope=None):
         # This resizing operation may distort the images because the aspect
         # ratio is not respected.
         resize_method = tf.image.ResizeMethod.BILINEAR
-        distorted_image = tf.image.resize_images(distorted_image, height, width, resize_method)
+        distorted_image = tf.image.resize_images(distorted_image, [height, width], resize_method)
         # Restore the shape since the dynamic slice based upon the bbox_size loses
         # the third dimension.
         distorted_image.set_shape([height, width, 3])
@@ -312,7 +312,7 @@ def eval_image(image, height, width, scope=None):
     Returns:
       3-D float Tensor of prepared image.
     """
-    with tf.op_scope([image, height, width], scope, 'eval_image'):
+    with tf.name_scope(scope, 'eval_image', [image, height, width]):
         # Crop the central region of the image
         image = tf.image.central_crop(image, central_fraction=0.975)
 

@@ -1,2 +1,2 @@
-from layers.preact_conv import preact_conv2d
-from layers.compact_bilinear_pooling import compact_bilinear_pooling
+from .preact_conv import preact_conv2d
+from .compact_bilinear_pooling import compact_bilinear_pooling

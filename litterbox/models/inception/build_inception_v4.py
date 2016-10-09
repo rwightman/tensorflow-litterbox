@@ -390,10 +390,10 @@ def build_inception_v4(
     """
     # endpoints will collect relevant activations for external use, for example, summaries or losses.
     endpoints = {}
-    op_scope_net = tf.op_scope([inputs], scope, 'Inception_v4')
+    name_scope_net = tf.name_scope(scope, 'Inception_v4', [inputs])
     arg_scope_train = arg_scope([layers.batch_norm, layers.dropout], is_training=is_training)
     arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME')
-    with op_scope_net, arg_scope_train, arg_scope_conv:
+    with name_scope_net, arg_scope_train, arg_scope_conv:
 
         net = block_stem(inputs, endpoints)
         # 35 x 35 x 384
@@ -450,10 +450,10 @@ def build_inception_resnet(
     network_name = 'inception_resnet_v%d' % ver
     print("Building %s" % network_name)
 
-    op_scope_net = tf.op_scope([inputs], scope, network_name)
+    name_scope_net = tf.name_scope(scope, network_name, [inputs])
     arg_scope_train = arg_scope([layers.batch_norm, layers.dropout], is_training=is_training)
     arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME')
-    with op_scope_net, arg_scope_train, arg_scope_conv:
+    with name_scope_net, arg_scope_train, arg_scope_conv:
 
         net = block_stem_res(inputs, endpoints) if ver == 1 else block_stem(inputs, endpoints)
         # 35 x 35 x 384 (v2)

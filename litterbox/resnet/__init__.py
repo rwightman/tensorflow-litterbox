@@ -1,1 +1,0 @@
-from resnet.model_resnet import ModelResnet

@@ -45,6 +45,9 @@ tf.app.flags.DEFINE_integer('num_preprocess_threads', 4,
                             """Please make this a multiple of 4.""")
 tf.app.flags.DEFINE_integer('num_readers', 4,
                             """Number of parallel readers during train.""")
+tf.app.flags.DEFINE_integer('num_examples', 0,
+                            """Number of examples to run. Note that the eval """
+                            """ImageNet dataset contains 50000 examples.""")
 
 # Images are preprocessed asynchronously using multiple threads specifed by
 # --num_preprocss_threads and the resulting processed images are stored in a
@@ -105,10 +108,10 @@ class Feed(object):
         self.caffe_fmt = True if FLAGS.image_fmt == 'caffe' else False
 
     def num_batches_per_epoch(self):
-        return math.ceil(self.dataset.num_examples_per_epoch() / self.batch_size)
+        return math.ceil(self.num_examples_per_epoch() / self.batch_size)
 
     def num_examples_per_epoch(self):
-        return self.dataset.num_examples_per_epoch()
+        return FLAGS.num_examples if FLAGS.num_examples else self.dataset.num_examples_per_epoch()
 
     def num_classes(self, with_background=False):
         return self.dataset.num_classes_with_background() if with_background \

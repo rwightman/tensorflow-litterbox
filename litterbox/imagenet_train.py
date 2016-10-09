@@ -13,27 +13,27 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
-
-from inception import ModelInception
-from resnet import ModelResnet
-from vgg import ModelVgg
-from fabric.train import *
-from imagenet_data import *
+from fabric import util
+from fabric import exec_train
+from imagenet_data import ImagenetData
+from models import ModelInception
+from models import ModelGoogle
 
 FLAGS = tf.app.flags.FLAGS
 
+tf.app.flags.DEFINE_string('subset', 'train',
+                           """Either 'validation', 'train', 'test'""")
 
 def main(_):
+    util.check_tensorflow_version()
+
     dataset = ImagenetData(subset=FLAGS.subset)
-    assert dataset.data_files()
+    #model = ModelGoogle()
     model = ModelInception(variant=ModelInception.Variant.ResnetV2)
     #model = ModelResnet(num_layers=50, width_factor=1)
     #model = ModelVgg(19)
 
-    if not tf.gfile.Exists(FLAGS.train_dir):
-        tf.gfile.MakeDirs(FLAGS.train_dir)
-    tf.gfile.DeleteRecursively(FLAGS.train_dir)
-    train(dataset, model)
+    exec_train.train(dataset, model)
 
 if __name__ == '__main__':
     tf.app.run()

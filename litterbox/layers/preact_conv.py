@@ -34,7 +34,7 @@ def preact_conv2d(
         scope=None):
     """Adds a 2D convolution preceded by batch normalization and activation.
     """
-    with variable_scope.variable_op_scope([inputs], scope, 'Conv', reuse=reuse) as sc:
+    with variable_scope.variable_scope(scope, 'Conv', values=[inputs], reuse=reuse) as sc:
         inputs = ops.convert_to_tensor(inputs)
         dtype = inputs.dtype.base_dtype
         if normalizer_fn:

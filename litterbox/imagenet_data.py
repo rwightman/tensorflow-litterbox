@@ -13,7 +13,6 @@ from __future__ import division
 from __future__ import print_function
 
 from fabric.dataset_record import DatasetRecord
-from fabric.dataset_file import DatasetFile
 
 
 class ImagenetData(DatasetRecord):

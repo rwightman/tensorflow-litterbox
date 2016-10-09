@@ -69,8 +69,10 @@ tf.app.flags.DEFINE_string('pretrained_model_path', '',
 tf.app.flags.DEFINE_float('grad_clip', 5.0,
                           """Clip gradients to this value.""")
 
-tf.app.flags.DEFINE_string('subset', 'train',
-                           """Either 'validation' or 'train'.""")
+tf.app.flags.DEFINE_float(
+    'moving_average_decay', None,
+    'The decay to use for the moving average.'
+    'If left as None, then moving averages are not used.')
 
 
 def _add_tower_loss(images, labels, num_classes, model, scope):
@@ -96,9 +98,7 @@ def _add_tower_loss(images, labels, num_classes, model, scope):
 
     # Build the portion of the Graph calculating the losses. Note that we will
     # assemble the total_loss using a custom function below.
-    split_batch_size = images.get_shape().as_list()[0]
-    assert split_batch_size == labels.get_shape()[0]  # Would this ever differ? Push inside add loss fn?
-    model.add_tower_loss(labels, batch_size=split_batch_size)
+    model.add_tower_loss(labels)
 
     # Assemble all of the losses for the current tower only.
     tower_losses = tf.contrib.losses.get_losses(scope)
@@ -121,7 +121,6 @@ def _add_tower_loss(images, labels, num_classes, model, scope):
         # as the original loss name.
         tf.scalar_summary(loss_name + ' (raw)', l)
         tf.scalar_summary(loss_name, loss_averages.average(l))
-
     with tf.control_dependencies([loss_averages_op]):
         total_loss = tf.identity(total_loss)
         output_loss = tf.identity(tower_losses[0])
@@ -246,26 +245,27 @@ def _build_train_graph(feed, model):
         if grad is not None:
             summaries.append(tf.histogram_summary(var.op.name + '/gradients', grad))
 
+    update_ops = []
+
     # Apply the gradients to adjust the shared variables.
-    apply_gradient_op = opt.apply_gradients(grads, global_step=global_step)
+    apply_gradient_update = opt.apply_gradients(grads, global_step=global_step)
+    update_ops.append(apply_gradient_update)
 
     # Add histograms for trainable variables.
     for var in tf.trainable_variables():
         summaries.append(tf.histogram_summary(var.op.name, var))
 
-    # Track the moving averages of all trainable variables.
-    # Note that we maintain a "double-average" of the BatchNormalization
-    # global statistics. This is more complicated then need be but we employ
-    # this for backward-compatibility with our previous models.
-    variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY, global_step)
+    if FLAGS.moving_average_decay:
+        moving_average_variables = (tf.trainable_variables() + tf.moving_average_variables())
+        variable_averages = tf.train.ExponentialMovingAverage(FLAGS.moving_average_decay, global_step)
+        variables_averages_update = variable_averages.apply(moving_average_variables)
+        update_ops.append(variables_averages_update)
 
-    # Another possibility is to use tf.slim.get_variables().
-    variables_to_average = (tf.trainable_variables() + tf.moving_average_variables())
-    variables_averages_op = variable_averages.apply(variables_to_average)
+    batch_norm_updates = tf.group(*batch_norm_updates)
+    update_ops.append(batch_norm_updates)
 
     # Group all updates to into a single train op.
-    batch_norm_updates_op = tf.group(*batch_norm_updates)
-    train_op = tf.group(apply_gradient_op, variables_averages_op, batch_norm_updates_op)
+    train_op = tf.group(*update_ops)
 
     # Build the summary operation from the last tower summaries.
     summary_op = tf.merge_summary(summaries)
@@ -277,9 +277,14 @@ def _build_train_graph(feed, model):
 
 
 def train(dataset, model):
+
+    assert dataset.data_files()
+    if not tf.gfile.Exists(FLAGS.train_dir):
+        tf.gfile.MakeDirs(FLAGS.train_dir)
+    tf.gfile.DeleteRecursively(FLAGS.train_dir)
+
     """Train on dataset for a number of steps."""
     with tf.Graph().as_default(), tf.device('/cpu:0'):
-
         # Override the number of preprocessing threads to account for the increased
         # number of GPU towers.
         num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus

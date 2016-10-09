@@ -12,23 +12,19 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from enum import Enum
-
 from .build_inception_v3 import build_inception_v3
 from .build_inception_v4 import build_inception_v4, build_inception_resnet
 
-from fabric import model
-
+import fabric
 import tensorflow as tf
 from tensorflow.contrib.framework import arg_scope
 from tensorflow.contrib import layers
-from tensorflow.contrib import losses
-from tensorflow.python.ops import math_ops
+from enum import Enum
 
 FLAGS = tf.app.flags.FLAGS
 
 
-class ModelInception(model.Model):
+class ModelInception(fabric.Model):
     # If a model is trained using multiple GPUs, prefix all Op names with tower_name
     # to differentiate the operations. Note that this prefix is removed from the
     # names of the summaries when visualizing a model.
@@ -37,9 +33,6 @@ class ModelInception(model.Model):
     # Batch normalization. Constant governing the exponential moving average of
     # the 'global' mean and variance for all activations.
     BATCHNORM_MOVING_AVERAGE_DECAY = 0.9997
-
-    # The decay to use for the moving average.
-    MOVING_AVERAGE_DECAY = 0.9999
 
     class Variant(Enum):
         V3 = 1
@@ -134,45 +127,28 @@ class ModelInception(model.Model):
 
         return logits
 
-    def add_tower_loss(self, labels, batch_size=None, scope=None):
+    def add_tower_loss(self, labels, scope=None):
         """Adds all losses for the model.
 
-        Note the final loss is not returned. Instead, the list of losses are collected.
+        The final loss is not returned, the list of losses are collected by slim.losses.
         The losses are accumulated in tower_loss() and summed to calculate the total loss.
 
         Args:
-          logits: List of logits from inference(). Each entry is a 2-D float Tensor.
           labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
-          batch_size: integer
           scope: tower scope of losses to add, ie 'tower_0/', defaults to last added tower if None
         """
-        if not batch_size:
-            batch_size = FLAGS.batch_size
-
         tower = self.tower(scope)
-
-        # Reshape the labels into a dense Tensor of
-        # shape [FLAGS.batch_size, num_classes].
-        sparse_labels = tf.reshape(labels, [batch_size, 1])
-        indices = tf.reshape(tf.range(batch_size), [batch_size, 1])
-        concated = tf.concat(1, [indices, sparse_labels])
-        num_classes = tower.logits.get_shape()[-1].value
-        dense_labels = tf.sparse_to_dense(concated, [batch_size, num_classes], 1.0, 0.0)
-
-        # Cross entropy loss for the main softmax prediction.
-        losses.softmax_cross_entropy(
-            tower.logits, dense_labels, label_smoothing=0.1, weight=1.0)
-
         if self.variant == ModelInception.Variant.V3:
-            # Cross entropy loss for the auxiliary softmax head.
-            losses.softmax_cross_entropy(
-                tower.aux_logits, dense_labels, label_smoothing=0.1, weight=0.4, scope='aux_loss')
+            aux_logits = tower.aux_logits
+        else:
+            aux_logits = None
+        fabric.loss.loss_softmax_cross_entropy(tower.logits, labels, aux_logits)
 
     def logit_scopes(self):
         return ['Output/Logits']
 
     @staticmethod
-    def loss_op(logits, labels):
+    def eval_loss_op(logits, labels):
         """Generate a simple (non tower based) loss op for use in evaluation.
 
         Args:
@@ -181,7 +157,7 @@ class ModelInception(model.Model):
           batch_size: integer
         """
         cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
-        loss = math_ops.reduce_mean(cross_entropy)
+        loss = tf.reduce_mean(cross_entropy)
         return loss
 
     @staticmethod

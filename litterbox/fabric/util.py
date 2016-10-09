@@ -26,3 +26,8 @@ def resolve_checkpoint_path(input_path):
         pass
 
     return checkpoint_path, global_step
+
+
+def check_tensorflow_version(min_version=11):
+    assert int(str.split(tf.__version__,'.')[1]) >= min_version, \
+        'Installed Tensorflow version (%s) is not be >= 0.%s.0' % (tf.__version__, min_version)
