@@ -40,26 +40,27 @@ from fabric import util
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_string('eval_dir', '/tmp/imagenet_eval',
-                           """Directory where to write event logs.""")
-
-tf.app.flags.DEFINE_string('checkpoint_path', '/tmp/imagenet_train',
-                           """Directory or file where to read model checkpoint(s).""")
+tf.app.flags.DEFINE_string(
+    'eval_dir', '/tmp/imagenet_eval',
+    """Directory where to write event logs.""")
 
 # Flags governing the frequency of the eval.
-tf.app.flags.DEFINE_integer('eval_interval_secs', 60 * 5,
-                            """How often to run the eval.""")
+tf.app.flags.DEFINE_integer(
+    'eval_interval_secs', 60 * 5,
+    """How often to run the eval.""")
 
-tf.app.flags.DEFINE_boolean('run_once', False,
-                            """Whether to run eval only once.""")
+tf.app.flags.DEFINE_boolean(
+    'run_once', False,
+    """Whether to run eval only once.""")
 
-# Flags governing the data used for the eval.
-tf.app.flags.DEFINE_integer('num_examples', 0,
-                            """Number of examples to run. Note that the eval """
-                            """ImageNet dataset contains 50000 examples.""")
+tf.app.flags.DEFINE_string(
+    'checkpoint_path', '/tmp/imagenet_train',
+    """Directory or file where to read model checkpoint(s).""")
 
-tf.app.flags.DEFINE_string('subset', 'validation',
-                           """Either 'validation' or 'train'.""")
+tf.app.flags.DEFINE_float(
+    'moving_average_decay', None,
+    'The decay to use for the moving average.'
+    'If left as None, then moving averages are not used.')
 
 
 def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary_op):
@@ -91,7 +92,7 @@ def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary
             for qr in tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS):
                 threads.extend(qr.create_threads(sess, coord=coord, daemon=True, start=True))
 
-            num_examples = FLAGS.num_examples if FLAGS.num_examples else feed.num_examples_per_epoch()
+            num_examples = feed.num_examples_per_epoch()
             num_iter = int(math.ceil(num_examples / feed.batch_size))
             # Counts the number of correct predictions.
             count_top_1 = 0.0
@@ -100,7 +101,7 @@ def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary
             total_sample_count = num_iter * feed.batch_size
             step = 0
 
-            print('%s: starting evaluation on (%s).' % (datetime.now(), FLAGS.subset))
+            print('%s: starting evaluation on (%s).' % (datetime.now(), feed.dataset.subset))
             start_time = time.time()
             while step < num_iter and not coord.should_stop():
                 top_1, top_5, loss = sess.run([top_1_op, top_5_op, loss_op])
@@ -139,6 +140,12 @@ def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary
 
 def evaluate(dataset, model):
     """Evaluate model on Dataset for a number of steps."""
+
+    assert dataset.data_files()
+    if tf.gfile.Exists(FLAGS.eval_dir):
+        tf.gfile.DeleteRecursively(FLAGS.eval_dir)
+    tf.gfile.MakeDirs(FLAGS.eval_dir)
+
     with tf.Graph().as_default():
         # Number of classes in the Dataset label set plus 1.
         # Label 0 is reserved for an (unused) background class.
@@ -155,11 +162,15 @@ def evaluate(dataset, model):
         # Calculate predictions.
         top_1_op = tf.nn.in_top_k(logits, labels, 1)
         top_5_op = tf.nn.in_top_k(logits, labels, 5)
-        loss_op = model.loss_op(logits, labels)
+        loss_op = model.eval_loss_op(logits, labels)
 
         # Restore the moving average version of the learned variables for eval.
-        variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY)
-        variables_to_restore = variable_averages.variables_to_restore()
+        if FLAGS.moving_average_decay:
+            variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY)
+            variables_to_restore = variable_averages.variables_to_restore()
+        else:
+            variables_to_restore = tf.contrib.framework.get_model_variables()
+
         saver = tf.train.Saver(variables_to_restore)
 
         # Build the summary operation based on the TF collection of Summaries.

@@ -144,12 +144,12 @@ def build_resnet(
     """Blah"""
 
     endpoints = {}  # A dictionary of endpoints to observe (activations, extra stats, etc)
-    op_scope_net = tf.op_scope([inputs], scope, 'ResNet')
+    name_scope_net = tf.name_scope(scope, 'ResNet', [inputs])
     arg_scope_train = arg_scope([layers.batch_norm, layers.dropout], is_training=is_training)
     arg_scope_conv = arg_scope(
         [layers.conv2d, my_layers.preact_conv2d, layers.max_pool2d, layers.avg_pool2d],
         stride=1, padding='SAME')
-    with op_scope_net, arg_scope_train, arg_scope_conv:
+    with name_scope_net, arg_scope_train, arg_scope_conv:
 
         # 224 x 224
         net = stem(inputs, endpoints, 64 * k)

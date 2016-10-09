@@ -227,10 +227,10 @@ def build_inception_v3(
     stack_counts = [3, 4, 2]
     endpoints = {}
     # Inception blocks
-    op_scope_net = tf.op_scope([inputs], scope, 'inception_v3')
+    name_scope_net = tf.name_scope(scope, 'inception_v3', [inputs])
     arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME')
     arg_scope_train = arg_scope([layers.batch_norm, layers.dropout], is_training=is_training)
-    with op_scope_net, arg_scope_conv, arg_scope_train:
+    with name_scope_net, arg_scope_conv, arg_scope_train:
 
         net = block_stem(inputs, endpoints)
         # 35 x 35 x 384 (v2)

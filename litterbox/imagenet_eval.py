@@ -12,24 +12,26 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from fabric.eval import *
-from imagenet_data import *
-from models import ModelInception
+import tensorflow as tf
+from fabric import util
+from fabric import exec_eval
+from imagenet_data import ImagenetData
+from models import ModelInception, ModelGoogle
 
 FLAGS = tf.app.flags.FLAGS
 
+tf.app.flags.DEFINE_string('subset', 'validation',
+                           """Either 'validation', 'train', 'test'""")
 
-def main(unused_argv=None):
+def main(_):
+    util.check_tensorflow_version()
+
     dataset = ImagenetData(subset=FLAGS.subset)
-    model = ModelInception(variant=ModelInception.Variant.ResnetV2)
 
-    assert dataset.data_files()
-    if tf.gfile.Exists(FLAGS.eval_dir):
-        tf.gfile.DeleteRecursively(FLAGS.eval_dir)
-    tf.gfile.MakeDirs(FLAGS.eval_dir)
+    model = ModelGoogle()
+    #model = ModelInception(variant=ModelInception.Variant.ResnetV2)
 
-    evaluate(dataset, model)
-
+    exec_eval.evaluate(dataset, model)
 
 if __name__ == '__main__':
     tf.app.run()
