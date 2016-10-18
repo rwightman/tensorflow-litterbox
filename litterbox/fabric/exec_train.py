@@ -116,11 +116,11 @@ def _add_tower_loss(images, labels, num_classes, model, scope):
     for l in tower_losses + [total_loss]:
         # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
         # session. This helps the clarity of presentation on TensorBoard.
-        loss_name = re.sub('%s_[0-9]*/' % model.TOWER_NAME, '', l.op.name)
+        loss_name = model.strip_common_scope(l.op.name)
         # Name each loss as '(raw)' and name the moving average version of the loss
         # as the original loss name.
-        tf.scalar_summary(loss_name + ' (raw)', l)
-        tf.scalar_summary(loss_name, loss_averages.average(l))
+        tf.scalar_summary('losses/' + loss_name + ' (raw)', l)
+        tf.scalar_summary('losses/' + loss_name, loss_averages.average(l))
     with tf.control_dependencies([loss_averages_op]):
         total_loss = tf.identity(total_loss)
         output_loss = tf.identity(tower_losses[0])
@@ -253,7 +253,7 @@ def _build_train_graph(feed, model):
 
     # Add histograms for trainable variables.
     for var in tf.trainable_variables():
-        summaries.append(tf.histogram_summary(var.op.name, var))
+        summaries.append(tf.histogram_summary(model.strip_common_scope(var.op.name), var))
 
     if FLAGS.moving_average_decay:
         moving_average_variables = (tf.trainable_variables() + tf.moving_average_variables())
