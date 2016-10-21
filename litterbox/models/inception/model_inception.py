@@ -28,7 +28,7 @@ class ModelInception(fabric.Model):
     # If a model is trained using multiple GPUs, prefix all Op names with tower_name
     # to differentiate the operations. Note that this prefix is removed from the
     # names of the summaries when visualizing a model.
-    TOWER_NAME = 'tower'
+    TOWER_PREFIX = 'tower'
 
     # Batch normalization. Constant governing the exponential moving average of
     # the 'global' mean and variance for all activations.

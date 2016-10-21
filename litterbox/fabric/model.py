@@ -17,23 +17,6 @@ import abc
 import re
 
 
-def activation_summary(x, tower_name):
-    """Helper to create summaries for activations.
-
-    Creates a summary that provides a histogram of activations.
-    Creates a summary that measure the sparsity of activations.
-
-    Args:
-      x: Tensor
-      tower_name: Name of tower
-    """
-    # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
-    # session. This helps the clarity of presentation on tensorboard.
-    tensor_name = re.sub('%s_[0-9]*/' % tower_name, '', x.op.name)
-    tf.histogram_summary(tensor_name + '/activations', x)
-    tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(x))
-
-
 class ModelTower(object):
     def __init__(self, name, endpoints, logits, aux_logits=None):
         self.name = name
@@ -48,9 +31,10 @@ class Model(object):
     # If a model is trained using multiple GPUs, prefix all Op names with tower_name
     # to differentiate the operations. Note that this prefix is removed from the
     # names of the summaries when visualizing a model.
-    TOWER_NAME = 'tower'
+    TOWER_PREFIX = 'tower'
 
     def __init__(self):
+        self.model_scope = None
         self._last_tower = None
         self._towers = {}
 
@@ -98,11 +82,24 @@ class Model(object):
                 model_variable_names, self.logit_scopes())
             return filtered_variables
 
-    def activation_summaries(self, name=None):
-        tower = self.tower(name)
+    def activation_summaries(self, tower_name=None):
+        tower = self.tower(tower_name)
         with tf.name_scope('summaries'):
-            for act in tower.endpoints.values():
-                activation_summary(act, Model.TOWER_NAME)
+            act_ops = {x: x.op.name for x in tower.endpoints.values()}
+            for endpoint, op_name in act_ops.items():
+                # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
+                # session. This helps the clarity of presentation on tensorboard.
+                tensor_name = self.strip_common_scope(op_name)
+                tf.histogram_summary(tensor_name + '/activations', endpoint)
+                tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(endpoint))
+
+    def strip_common_scope(self, input_name):
+        if self.model_scope:
+            output_name = re.sub('(%s_[0-9]*/)?%s/' % (self.TOWER_PREFIX, self.model_scope), '', input_name)
+        else:
+            output_name = re.sub('%s_[0-9]*/' % self.TOWER_PREFIX, '', input_name)
+        return output_name
+
 
     @staticmethod
     def default_optimizer_params():
@@ -116,5 +113,5 @@ class Model(object):
 
     @staticmethod
     def scope_name(tower_id=0):
-        return '%s_%d' % (Model.TOWER_NAME, tower_id)
+        return '%s_%d' % (Model.TOWER_PREFIX, tower_id)
 

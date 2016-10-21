@@ -22,7 +22,7 @@ from models import ModelInception, ModelGoogle
 
 
 class ExampleData(DatasetFile):
-    """StateFarm data set."""
+    # Example dataset for feeding folder of images into model
 
     def __init__(self, subset):
         super(ExampleData, self).__init__('Example', subset)

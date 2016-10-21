@@ -12,6 +12,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import re
 import tensorflow as tf
 from fabric import model
 from models.google.nets import nets_factory
@@ -36,6 +37,12 @@ class ModelGoogle(model.Model):
             is_training=is_training)
         logits, endpoints = network_fn(images)
 
+        # HACK get mode variable scope set by google net code from logits op name so it can
+        # be removed for smaller Tensorboard tags
+        scope_search = re.search('%s_[0-9]*/(\w+)/' % self.TOWER_PREFIX, logits.op.name)
+        if scope_search:
+            self.model_scope = scope_search.group(1)
+
         if 'AuxLogits' in endpoints:
             # Grab the logits associated with the side head. Employed during training.
             aux_logits = endpoints['AuxLogits']
@@ -49,13 +56,12 @@ class ModelGoogle(model.Model):
             aux_logits
         )
 
-        # FIXME this breaks with google's newer network style, figure out what's happening
         # Add summaries for viewing model statistics on TensorBoard.
-        # self.activation_summaries()
+        self.activation_summaries()
 
         return logits
 
-    def add_tower_loss(self, labels, batch_size=None, scope=None):
+    def add_tower_loss(self, labels, scope=None):
         tower = self.tower(scope)
         num_classes = tower.logits.get_shape()[-1].value
         labels = slim.one_hot_encoding(labels, num_classes=num_classes)
