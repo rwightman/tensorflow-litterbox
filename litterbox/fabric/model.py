@@ -15,14 +15,21 @@ from __future__ import print_function
 import tensorflow as tf
 import abc
 import re
+from copy import deepcopy
+
+
+def merge_params(default, args):
+    params = deepcopy(default)
+    params.update(args)
+    return params
 
 
 class ModelTower(object):
-    def __init__(self, name, endpoints, logits, aux_logits=None):
+    def __init__(self, name, endpoints, outputs, aux_outputs=None):
         self.name = name
         self.endpoints = endpoints
-        self.logits = logits
-        self.aux_logits = aux_logits
+        self.outputs = outputs
+        self.aux_outputs = aux_outputs
 
 
 class Model(object):
@@ -38,12 +45,12 @@ class Model(object):
         self._last_tower = None
         self._towers = {}
 
-    def add_tower(self, name, endpoints, logits, aux_logits=None):
+    def add_tower(self, name, endpoints, outputs, aux_outputs=None):
         self._last_tower = ModelTower(
             name,
             endpoints,
-            logits,
-            aux_logits
+            outputs,
+            aux_outputs
         )
         self._towers[name] = self._last_tower
 
@@ -61,9 +68,9 @@ class Model(object):
     def last_scope(self):
         return self._last_tower.name if self._last_tower else ''
 
-    # Return scopes (strings) for logit variables to allow filtering for save/restore
+    # Return scopes (strings) for output variables to allow filtering for save/restore
     @abc.abstractmethod
-    def logit_scopes(self):
+    def output_scopes(self):
         pass
 
     # Return list of 'get/create variable' functions used by the model (used for variable scoping).
@@ -72,20 +79,30 @@ class Model(object):
         return [tf.contrib.framework.variable]
 
     # Return a list of model variables to restore for a Saver
-    def variables_to_restore(self, restore_logits=True):
+    def variables_to_restore(self, restore_outputs=True):
         model_variables = tf.contrib.framework.variables.get_model_variables()
-        if restore_logits:
+        if restore_outputs:
             return model_variables
         else:
             model_variable_names = [x.name for x in model_variables]
             filtered_variables = tf.contrib.framework.variables.get_variables_to_restore(
-                model_variable_names, self.logit_scopes())
+                model_variable_names, self.output_scopes())
             return filtered_variables
 
     def activation_summaries(self, tower_name=None):
         tower = self.tower(tower_name)
         with tf.name_scope('summaries'):
-            act_ops = {x: x.op.name for x in tower.endpoints.values()}
+            act_ops = {}
+            for x in tower.endpoints.values():
+                print(x)
+                if isinstance(x, dict):
+                    for y in x.values():
+                        act_ops[y] = y.op.name
+                elif isinstance(x, list):
+                    for y in x:
+                        act_ops[y] = y.op.name
+                else:
+                    act_ops[x] = x.op.name
             for endpoint, op_name in act_ops.items():
                 # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
                 # session. This helps the clarity of presentation on tensorboard.

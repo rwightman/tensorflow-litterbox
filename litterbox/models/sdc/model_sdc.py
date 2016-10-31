@@ -12,65 +12,70 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import fabric
 import re
 import tensorflow as tf
-from fabric import model
+from copy import deepcopy
 from .build_inception_resnet_sdc import *
 slim = tf.contrib.slim
 
+sdc_default_params = {
+    'outputs': {'steer': 1}, #, 'xyz': 2},
+}
 
-class ModelSdc(model.Model):
 
-    def __init__(self, model_name='sdc'):
+class ModelSdc(fabric.model.Model):
+
+    def __init__(self, params={}):
         super(ModelSdc, self).__init__()
+        params = fabric.model.merge_params(sdc_default_params, params)
+        self.output_cfg = params['outputs']
 
-        # model_name must correspond to one of google's network names in nets package,
-        # see nets_factory.py for valid names.
-        self.model_name = model_name
+    def build_tower(self, inputs, is_training=False, scope=None):
 
-    def build_tower(self, images, num_classes, is_training=False, scope=None):
-        weight_decay = 0.0001
+        with slim.arg_scope(inception_resnet_v2_arg_scope()):
+            output, endpoints = build_inception_resnet_sdc_regression_v1(
+                inputs,
+                self.output_cfg,
+                is_training=is_training,
+                scope=scope)
 
-        output, endpoints = build_inception_resnet_sdc_regression_v1(
-            images,
-            is_training=is_training,
-            scope=scope)
+        #scope_search = re.search('%s_[0-9]*/(\w+)/' % self.TOWER_PREFIX, output['steer'].op.name)
+        #print(scope_search)
+        #self.model_scope = "InceptionResnetV2"
 
-        self.model_scope = "InceptionResnetV2"
+        aux_output = None
+        if 'AuxOutput' in endpoints:
+            aux_output = endpoints['AuxOutput']
 
         self.add_tower(
             scope,
-            endpoints,
-            logits
+            endpoints=endpoints,
+            outputs=output,
+            aux_outputs=aux_output,
         )
 
         # Add summaries for viewing model statistics on TensorBoard.
         self.activation_summaries()
 
-        return logits
+        return output
 
-    def add_tower_loss(self, labels, scope=None):
+    def add_tower_loss(self, targets, scope=None):
         tower = self.tower(scope)
-        num_classes = tower.logits.get_shape()[-1].value
-        labels = slim.one_hot_encoding(labels, num_classes=num_classes)
-
-        slim.losses.softmax_cross_entropy(
-            tower.logits, labels, label_smoothing=0.1, weight=1.0)
-
-        if 'AuxLogits' in tower.endpoints:
-            slim.losses.softmax_cross_entropy(
-                tower.endpoints['AuxLogits'], labels,
-                label_smoothing=0.1, weight=0.4, scope='aux_loss')
+        assert 'xyz' in self.output_cfg or 'steer' in self.output_cfg
+        if 'xyz' in self.output_cfg:
+            fabric.loss.loss_huber_with_aux(
+                tower.outputs['xyz'], targets[1], aux_predictions=tower.aux_outputs['xyz'])
+        if 'steer' in self.output_cfg:
+            targets_steer = tf.expand_dims(targets[0], 1)
+            print(tower.outputs['steer'].get_shape(), targets_steer.get_shape())
+            fabric.loss.loss_huber_with_aux(
+                tower.outputs['steer'], targets_steer, aux_predictions=tower.aux_outputs['steer'])
 
     @staticmethod
-    def eval_loss_op(logits, labels):
+    def eval_loss_op(predictions, targets):
         """Generate a simple (non tower based) loss op for use in evaluation.
-
-        Args:
-          logits: List of logits from inference(). Each entry is a 2-D float Tensor.
-          labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
-          batch_size: integer
         """
-        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
-        loss = tf.reduce_mean(cross_entropy)
-        return loss
+        with slim.arg_scope([slim.add_loss], loss_collection=None):  # don't add eval loss to collection
+            loss = fabric.loss.loss_huber(predictions, targets, scope='loss_huber_eval')
+            return loss

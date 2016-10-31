@@ -26,20 +26,13 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import tensorflow as tf
 import math
-
-from .parse_proto_imagenet import parse_imagenet_proto
+import tensorflow as tf
 
 FLAGS = tf.app.flags.FLAGS
 
 tf.app.flags.DEFINE_integer('batch_size', 32,
                             """Number of images to process in a batch.""")
-tf.app.flags.DEFINE_integer('image_size', 299,
-                            """Provide square images of this size.""")
-tf.app.flags.DEFINE_float('image_aspect', 0.0, """Aspect ratio based sizing, square image_size*image_size if 0""")
-tf.app.flags.DEFINE_string('image_fmt', 'default',
-                            """Either 'default' RGB [-1,1] or 'caffe' BGR [0,255]""")
 tf.app.flags.DEFINE_integer('num_preprocess_threads', 4,
                             """Number of preprocessing threads per tower. """
                             """Please make this a multiple of 4.""")
@@ -68,17 +61,15 @@ tf.app.flags.DEFINE_integer('input_queue_memory_factor', 8,
 
 class Feed(object):
 
-    def __init__(self, dataset, image_preprocess, batch_size=None, num_preprocess_threads=None, num_readers=None):
+    def __init__(self, dataset, processor, batch_size=None, num_preprocess_threads=None, num_readers=None):
 
         self.dataset = dataset
         if not dataset:
             raise ValueError('Please provide a dataset')
 
-        self.image_preprocess=image_preprocess
-        if not image_preprocess:
-            raise ValueError('Please provide an image preprocessor')
-
-        self.proto_parser = parse_imagenet_proto
+        self.processor = processor
+        if not processor:
+            raise ValueError('Please provide a data preprocessor')
 
         self.batch_size = FLAGS.batch_size if not batch_size else batch_size
 
@@ -93,20 +84,6 @@ class Feed(object):
         if self.num_readers < 1:
             raise ValueError('Please make num_readers at least 1')
 
-        # For aspect based image size, short edge set to FLAGS.image_size
-        if FLAGS.image_aspect == 0.0:
-            self.width = FLAGS.image_size
-            self.height = FLAGS.image_size
-        elif FLAGS.image_aspect > 1.0:
-            self.width = math.ceil(FLAGS.image_size * FLAGS.image_aspect)
-            self.height = FLAGS.image_size
-        else:
-            self.width = FLAGS.image_size
-            self.height = math.ceil(FLAGS.image_size / FLAGS.image_aspect)
-
-        self.depth = 3
-        self.caffe_fmt = True if FLAGS.image_fmt == 'caffe' else False
-
     def num_batches_per_epoch(self):
         return math.ceil(self.num_examples_per_epoch() / self.batch_size)
 
@@ -117,73 +94,52 @@ class Feed(object):
         return self.dataset.num_classes_with_background() if with_background \
             else self.dataset.num_classes()
 
-    def inputs(self):
+    def inputs_for_eval(self, num_splits=0):
         """Generate batches of images for evaluation.
         See _batch_inputs.
         """
         # Force all input processing onto CPU in order to reserve the GPU for
         # the forward inference and back-propagation.
         with tf.device('/cpu:0'):
-            images, labels, names = self._batch_inputs(train=False)
+            eval_inputs = self._batch_inputs(num_splits, train=False)
 
-        return images, labels, names
+        return eval_inputs
 
-    def distorted_inputs(self):
+    def inputs_for_train(self, num_splits=0):
         """Generate batches of distorted images for training.
         See _batch_inputs
         """
         # Force all input processing onto CPU in order to reserve the GPU for
         # the forward inference and back-propagation.
         with tf.device('/cpu:0'):
-            images, labels, names = self._batch_inputs(train=True)
+            train_inputs = self._batch_inputs(num_splits, train=True)
 
-        return images, labels, names
+        return train_inputs
 
-    def _batch_inputs(self, train=False):
+    def _batch_inputs(self, num_splits, train=False):
         """Construct batches of training or evaluation examples from the image dataset.
 
-        Args:
-          dataset: instance of Dataset class specifying the dataset.
-          batch_size: integer, number of examples in batch
-          num_preprocess_threads: integer, total number of preprocessing threads but
-            None defaults to FLAGS.num_preprocess_threads.
-
         Returns:
-          images: Images. 4D tensor of size [batch_size, FLAGS.image_size, image_size, 3].
-          labels: 1-D integer Tensor of [FLAGS.batch_size].
+          images: Images. 4D tensor of size [batch_size, image_size, image_size, 3].
+          labels: 1-D integer Tensor of [batch_size].
         """
         with tf.name_scope('batch_processing'):
-
-            inputs = self._batch_inputs_record(train) if self.dataset.is_record \
-                else self._batch_inputs_file(train)
+            if self.dataset.is_record:
+                inputs = self._batch_inputs_record(train)
+            else:
+                inputs = self._batch_inputs_file(train)
 
             batch_queue_capacity = 2 * self.num_preprocess_threads * self.batch_size
-            images, label_batch, name_batch = tf.train.batch_join(
+            batch_data = tf.train.batch_join(
                 inputs,
                 batch_size=self.batch_size,
                 capacity=batch_queue_capacity)
                 #allow_smaller_final_batch=(not train))
 
-            images = tf.cast(images, tf.float32)
-            images = tf.reshape(images, shape=[self.batch_size, self.height, self.width, self.depth])
-
-            # Display the training images in the visualizer.
-            # tf.image_summary('images', images)
-
-            return images, \
-                   tf.reshape(label_batch, [self.batch_size]), \
-                   tf.reshape(name_batch, [self.batch_size])
+            return self.processor.reshape_batch(batch_data, self.batch_size, num_splits)
 
     def _batch_inputs_record(self, train):
         """Construct batches of training or evaluation examples from the image dataset.
-
-        Args:
-          dataset: instance of Dataset class specifying the dataset.
-            See dataset.py for details.
-          batch_size: integer
-          train: boolean
-          num_preprocess_threads: integer, total number of preprocessing threads
-          num_readers: integer, number of parallel readers
 
         Returns:
           images: 4-D float Tensor of a batch of images
@@ -239,23 +195,14 @@ class Feed(object):
         inputs = []
         for thread_id in range(self.num_preprocess_threads):
             # Parse a serialized Example proto to extract the image and metadata.
-            image_buffer, label_index, bbox, _, name = self.proto_parser(example_serialized)
-            image = self.image_preprocess(
-                image_buffer, self.height, self.width, bbox, self.caffe_fmt, train, thread_id)
-            inputs.append([image, label_index, name])
+            parsed = self.processor.parse_example(example_serialized)
+            processed = self.processor.process_data(parsed, train=train, thread_id=thread_id)
+            inputs.append(list(processed))
 
         return inputs
 
     def _batch_inputs_file(self, train):
-        """Construct batches of training or evaluation examples from the image dataset.
-
-        Args:
-          dataset: instance of Dataset class specifying the dataset.
-            See dataset.py for details.
-          batch_size: integer
-          train: boolean
-          num_preprocess_threads: integer, total number of preprocessing threads
-          num_readers: integer, number of parallel readers
+        """Construct batches of training or evaluation examples from filenames.
 
         Returns:
           images: 4-D float Tensor of a batch of images
@@ -288,10 +235,8 @@ class Feed(object):
             filename = input_queue[0]
             label_index = input_queue[1]
             image_buffer = tf.read_file(filename)
-            image = self.image_preprocess(
-                image_buffer,
-                height=self.height, width=self.width, caffe_fmt=self.caffe_fmt,
-                train=train, thread_id=thread_id)
-            inputs.append([image, label_index, filename])
+            data_packed = [image_buffer, label_index, filename]
+            processed = self.processor.preprocess_data(data_packed, thread_id=thread_id)
+            inputs.append(list(processed))
 
         return inputs

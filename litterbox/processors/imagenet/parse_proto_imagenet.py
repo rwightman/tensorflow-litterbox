@@ -26,7 +26,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-def parse_imagenet_proto(example_serialized):
+def parse_proto_imagenet(example_serialized):
     """Parses an Example proto containing a training example of an image.
 
     The output of the build_image_data.py image preprocessing script is a dataset

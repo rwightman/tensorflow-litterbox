@@ -27,16 +27,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import time
-from datetime import datetime
 import copy
 import os.path
-import re
+import time
+from datetime import datetime
 
 import numpy as np
 import tensorflow as tf
 
-from .image_processing import image_preprocess
 from .feed import Feed
 from .opt_param_scheduler import OptParamScheduler
 
@@ -75,7 +73,7 @@ tf.app.flags.DEFINE_float(
     'If left as None, then moving averages are not used.')
 
 
-def _add_tower_loss(images, labels, num_classes, model, scope):
+def _add_tower_loss(inputs, targets, model, scope):
     """Calculate the total loss on a single tower running the ImageNet model.
 
     We perform 'batch splitting'. This means that we cut up a batch across
@@ -94,11 +92,11 @@ def _add_tower_loss(images, labels, num_classes, model, scope):
        Tensor of shape [] containing the total loss for a batch of data
     """
     # Build inference Graph.
-    model.build_tower(images, num_classes, is_training=True, scope=scope)
+    model.build_tower(inputs, is_training=True, scope=scope)
 
     # Build the portion of the Graph calculating the losses. Note that we will
     # assemble the total_loss using a custom function below.
-    model.add_tower_loss(labels)
+    model.add_tower_loss(targets)
 
     # Assemble all of the losses for the current tower only.
     tower_losses = tf.contrib.losses.get_losses(scope)
@@ -178,23 +176,16 @@ def _build_train_graph(feed, model):
 
     # Get images and labels for ImageNet and split the batch across GPUs.
     assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
+    num_gpus = FLAGS.num_gpus
 
-    images, labels, _ = feed.distorted_inputs()
+    train_inputs = feed.inputs_for_train(num_splits=num_gpus)
 
     input_summaries = copy.copy(tf.get_collection(tf.GraphKeys.SUMMARIES))
-
-    # Number of classes in the Dataset label set plus 1.
-    # Label 0 is reserved for an (unused) background class if specified by feed/dataset
-    num_classes = feed.num_classes(with_background=True)
-
-    num_gpus = FLAGS.num_gpus
-    # Split the batch of images and labels for towers.
-    images_splits = tf.split(0, num_gpus, images)
-    labels_splits = tf.split(0, num_gpus, labels)
 
     # Calculate the gradients for each model tower.
     tower_grads = []
     for i in range(num_gpus):
+        inputs, _, targets = feed.processor.map_inputs(train_inputs, i)
         with tf.device('/gpu:%d' % i):
             with tf.name_scope(model.scope_name(i)) as scope:
                 # Force all Variables to reside on the CPU.
@@ -203,12 +194,12 @@ def _build_train_graph(feed, model):
                         # Calculate the loss for one tower of the ImageNet model. This
                         # function constructs the entire ImageNet model but shares the
                         # variables across all towers.
-                        tower_losses = _add_tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
+                        tower_losses = _add_tower_loss(inputs, targets, model, scope)
 
                     # Reuse variables for the next tower.
                     tf.get_variable_scope().reuse_variables()
                 else:
-                    tower_losses = _add_tower_loss(images_splits[i], labels_splits[i], num_classes, model, scope)
+                    tower_losses = _add_tower_loss(inputs, targets, model, scope)
 
                 # Calculate the gradients for the batch of data on this ImageNet tower.
                 grads = opt.compute_gradients(tower_losses[0])
@@ -276,7 +267,7 @@ def _build_train_graph(feed, model):
     return train_op, init_op, summary_op, tower_losses
 
 
-def train(dataset, model):
+def train(dataset, processor, model):
 
     assert dataset.data_files()
     if not tf.gfile.Exists(FLAGS.train_dir):
@@ -290,7 +281,7 @@ def train(dataset, model):
         num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus
         feed = Feed(
             dataset,
-            image_preprocess,
+            processor,
             batch_size=FLAGS.batch_size,
             num_preprocess_threads=num_preprocess_threads)
 

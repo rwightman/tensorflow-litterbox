@@ -139,12 +139,12 @@ class ModelInception(fabric.Model):
         """
         tower = self.tower(scope)
         if self.variant == ModelInception.Variant.V3:
-            aux_logits = tower.aux_logits
+            aux_logits = tower.aux_outputs
         else:
             aux_logits = None
-        fabric.loss.loss_softmax_cross_entropy(tower.logits, labels, aux_logits)
+        fabric.loss.loss_softmax_cross_entropy(tower.outputs, labels, aux_logits)
 
-    def logit_scopes(self):
+    def output_scopes(self):
         return ['Output/Logits']
 
     @staticmethod

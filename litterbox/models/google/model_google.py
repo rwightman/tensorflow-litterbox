@@ -67,11 +67,11 @@ class ModelGoogle(model.Model):
         labels = slim.one_hot_encoding(labels, num_classes=num_classes)
 
         slim.losses.softmax_cross_entropy(
-            tower.logits, labels, label_smoothing=0.1, weight=1.0)
+            tower.outputs, labels, label_smoothing=0.1, weight=1.0)
 
         if 'AuxLogits' in tower.endpoints:
             slim.losses.softmax_cross_entropy(
-                tower.endpoints['AuxLogits'], labels,
+                tower.aux_outputs, labels,
                 label_smoothing=0.1, weight=0.4, scope='aux_loss')
 
     @staticmethod

@@ -5,16 +5,16 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-from .image_processing import image_preprocess
-from .feed import Feed
-from fabric import util
-
 import math
 import time
 from datetime import datetime
 
-import tensorflow as tf
 import numpy as np
+import tensorflow as tf
+
+from fabric import util
+from processors.imagenet.image_processing_imagenet import image_preprocess
+from .feed import Feed
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -89,20 +89,16 @@ def _predict(feed, saver, output_op, names_op):
 def predict(dataset, model):
     """Predict/infer outputs for dataset using model."""
     with tf.Graph().as_default():
-        # Number of classes in the dataset label set plus 1.
-        # Label 0 is reserved for an (unused) background class.
-        num_classes = dataset.num_classes_with_background()
-
         # Get images and labels from the dataset.
         feed = Feed(dataset, image_preprocess, batch_size=FLAGS.batch_size)
-        images, _, names = feed.inputs()
-
+        eval_inputs = feed.inputs_for_eval()
+        inputs, identities, _ = feed.map_inputs(eval_inputs)
         # Build a Graph that computes the logits predictions from the inference model.
-        logits = model.build_tower(images, num_classes)
+        outputs = model.build_tower(inputs)
         if dataset.has_background_class:
-            softmax_output = tf.nn.softmax(tf.slice(logits, [0, 1], [-1, -1]))
+            softmax_output = tf.nn.softmax(tf.slice(outputs, [0, 1], [-1, -1]))
         else:
-            softmax_output = tf.nn.softmax(logits)
+            softmax_output = tf.nn.softmax(outputs)
 
         if FLAGS.moving_average_decay:
             variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY)
@@ -112,6 +108,6 @@ def predict(dataset, model):
 
         saver = tf.train.Saver(variables_to_restore)
 
-        predictions = _predict(feed, saver, softmax_output, names)
+        predictions = _predict(feed, saver, softmax_output, identities)
 
         return predictions

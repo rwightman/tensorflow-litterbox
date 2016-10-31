@@ -171,7 +171,7 @@ class ModelVgg(fabric.Model):
         self.add_tower(
             name=scope,
             endpoints=endpoints,
-            logits=logits
+            outputs=logits
         )
 
         # Add summaries for viewing model statistics on TensorBoard.
@@ -190,9 +190,9 @@ class ModelVgg(fabric.Model):
           scope: tower scope of losses to add, ie 'tower_0/', defaults to last added tower if None
         """
         tower = self.tower(scope)
-        fabric.loss.loss_softmax_cross_entropy(tower.logits, labels)
+        fabric.loss.loss_softmax_cross_entropy(tower.outputs, labels)
 
-    def logit_scopes(self):
+    def output_scopes(self):
         return ['logits/logits']
 
     @staticmethod

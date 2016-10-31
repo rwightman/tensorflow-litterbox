@@ -31,12 +31,11 @@ import time
 from datetime import datetime
 
 import numpy as np
-import os.path
 import tensorflow as tf
 
-from fabric.image_processing import image_preprocess
-from fabric.feed import Feed
 from fabric import util
+from fabric.feed import Feed
+from processors.imagenet.image_processing_imagenet import image_preprocess
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -153,7 +152,7 @@ def evaluate(dataset, model):
 
         # Get images and labels from the dataset.
         feed = Feed(dataset, image_preprocess, batch_size=FLAGS.batch_size)
-        images, labels, _ = feed.inputs()
+        images, labels, _ = feed.inputs_for_eval()
 
         # Build a Graph that computes the logits predictions from the
         # inference model.

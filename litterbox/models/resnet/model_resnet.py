@@ -22,15 +22,24 @@ from tensorflow.contrib import layers
 
 FLAGS = tf.app.flags.FLAGS
 
+resnet_default_params = {
+    'num_layers': 34,
+    'width_factor': 1,
+    'pre_activation': False,
+    'num_classes': 1000,
+}
+
 
 class ModelResnet(fabric.Model):
 
-    def __init__(self, num_layers=34, width_factor=1):
+    def __init__(self, params=resnet_default_params):
         super(ModelResnet, self).__init__()
-        self.num_layers = num_layers
-        self.width_factor = width_factor
+        self.num_layers = params['num_layers']
+        self.width_factor = params['width_factor']
+        self.pre_activation = params['pre_activation']
+        self.num_classes = params['num_classes']
 
-    def build_tower(self, inputs, num_classes, is_training=False, scope=None):
+    def build_tower(self, inputs, is_training=False, scope=None):
 
         # layer configs
         if self.num_layers == 16:
@@ -60,9 +69,6 @@ class ModelResnet(fabric.Model):
         else:
             assert False, "Invalid number of layers"
 
-        k = self.width_factor
-        pre_activation = True
-
         batch_norm_params = {
             # Decay for the moving averages.
             'decay': 0.9997,
@@ -83,9 +89,9 @@ class ModelResnet(fabric.Model):
         with arg_scope_layers, arg_scope_conv:
             logits, endpoints = build_resnet(
                 inputs,
-                k=k,
-                pre_activation=pre_activation,
-                num_classes=num_classes,
+                k=self.width_factor,
+                pre_activation=self.pre_activation,
+                num_classes=self.num_classes,
                 num_blocks=num_blocks,
                 bottleneck=bottleneck,
                 is_training=is_training,
@@ -94,7 +100,7 @@ class ModelResnet(fabric.Model):
         self.add_tower(
             name=scope,
             endpoints=endpoints,
-            logits=logits
+            outputs=logits
         )
 
         # Add summaries for viewing model statistics on TensorBoard.
@@ -113,9 +119,9 @@ class ModelResnet(fabric.Model):
           scope: tower scope of losses to add, ie 'tower_0/', defaults to last added tower if None
         """
         tower = self.tower(scope)
-        fabric.loss.loss_softmax_cross_entropy(tower.logits, labels)
+        fabric.loss.loss_softmax_cross_entropy(tower.outputs, labels)
 
-    def logit_scopes(self):
+    def output_scopes(self):
         return ['Outputs/Logits']
 
     @staticmethod

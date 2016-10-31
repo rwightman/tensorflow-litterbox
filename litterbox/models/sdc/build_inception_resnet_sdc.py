@@ -63,7 +63,9 @@ def block8(net, scale=1.0, activation_fn=tf.nn.relu, scope=None, reuse=None):
 
 def build_inception_resnet_sdc_regression_v1(
         inputs,
+        output_cfg={'steer': 1},
         is_training=True,
+        bayesian=False,
         dropout_keep_prob=0.8,
         reuse=None,
         scope='InceptionResnetV2'):
@@ -79,34 +81,34 @@ def build_inception_resnet_sdc_regression_v1(
 
     Returns:
       logits: the logits outputs of the model.
-      end_points: the set of end_points from the inception model.
+      endpoints: the set of endpoints from the inception model.
     """
-    end_points = {}
+    endpoints = {}
     var_scope = tf.variable_scope(scope, 'InceptionResnetV2', [inputs], reuse=reuse)
     arg_scope_train = slim.arg_scope([slim.batch_norm, slim.dropout], is_training=is_training)
     arg_scope_conv = slim.arg_scope([slim.conv2d, slim.max_pool2d, slim.avg_pool2d], stride=1, padding='SAME')
     with var_scope, arg_scope_train, arg_scope_conv:
         # 149 x 149 x 32
         net = slim.conv2d(inputs, 32, 3, stride=2, padding='VALID', scope='Conv2d_1a_3x3')
-        end_points['Conv2d_1a_3x3'] = net
+        endpoints['Conv2d_1a_3x3'] = net
         # 147 x 147 x 32
         net = slim.conv2d(net, 32, 3, padding='VALID', scope='Conv2d_2a_3x3')
-        end_points['Conv2d_2a_3x3'] = net
+        endpoints['Conv2d_2a_3x3'] = net
         # 147 x 147 x 64
         net = slim.conv2d(net, 64, 3, scope='Conv2d_2b_3x3')
-        end_points['Conv2d_2b_3x3'] = net
+        endpoints['Conv2d_2b_3x3'] = net
         # 73 x 73 x 64
         net = slim.max_pool2d(net, 3, stride=2, padding='VALID', scope='MaxPool_3a_3x3')
-        end_points['MaxPool_3a_3x3'] = net
+        endpoints['MaxPool_3a_3x3'] = net
         # 73 x 73 x 80
         net = slim.conv2d(net, 80, 1, padding='VALID', scope='Conv2d_3b_1x1')
-        end_points['Conv2d_3b_1x1'] = net
+        endpoints['Conv2d_3b_1x1'] = net
         # 71 x 71 x 192
         net = slim.conv2d(net, 192, 3, padding='VALID', scope='Conv2d_4a_3x3')
-        end_points['Conv2d_4a_3x3'] = net
+        endpoints['Conv2d_4a_3x3'] = net
         # 35 x 35 x 192
         net = slim.max_pool2d(net, 3, stride=2, padding='VALID', scope='MaxPool_5a_3x3')
-        end_points['MaxPool_5a_3x3'] = net
+        endpoints['MaxPool_5a_3x3'] = net
 
         # 35 x 35 x 320
         with tf.variable_scope('Mixed_5b'):
@@ -124,7 +126,7 @@ def build_inception_resnet_sdc_regression_v1(
                 tower_pool_1 = slim.conv2d(tower_pool, 64, 1, scope='Conv2d_0b_1x1')
             net = tf.concat(3, [tower_conv, tower_conv1_1, tower_conv2_2, tower_pool_1])
 
-        end_points['Mixed_5b'] = net
+        endpoints['Mixed_5b'] = net
         net = slim.repeat(net, 10, block35, scale=0.17)
 
         # 17 x 17 x 1024
@@ -139,17 +141,36 @@ def build_inception_resnet_sdc_regression_v1(
                 tower_pool = slim.max_pool2d(net, 3, stride=2, padding='VALID', scope='MaxPool_1a_3x3')
             net = tf.concat(3, [tower_conv, tower_conv1_2, tower_pool])
 
-        end_points['Mixed_6a'] = net
+        endpoints['Mixed_6a'] = net
         net = slim.repeat(net, 20, block17, scale=0.10)
 
         # Auxillary tower
         with tf.variable_scope('AuxLogits'):
             aux = slim.avg_pool2d(net, 5, stride=3, padding='VALID', scope='Conv2d_1a_3x3')
             aux = slim.conv2d(aux, 128, 1, scope='Conv2d_1b_1x1')
+
+            #FIXME slice this layer off?
             aux = slim.conv2d(aux, 768, aux.get_shape()[1:3], padding='VALID', scope='Conv2d_2a_5x5')
+
             aux = slim.flatten(aux)
-            aux = slim.fully_connected(aux, num_classes, activation_fn=None, scope='Logits')
-            end_points['AuxLogits'] = aux
+
+            #Layer removed
+            #aux = slim.fully_connected(aux, num_classes, activation_fn=None, scope='Logits')
+            #endpoints['AuxLogits'] = aux
+
+            # Here to end of AuxLogits scope added for SDC regression task
+            aux = slim.fully_connected(aux, 768, scope='Fc1')
+            aux = slim.dropout(aux, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
+
+            # regression aux outputs
+            aux_output = {}
+            if 'xyz' in output_cfg:
+                aux_output['xyz'] = \
+                    slim.fully_connected(aux, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
+            if 'steer' in output_cfg:
+                aux_output['steer'] = \
+                    slim.fully_connected(aux, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
+            endpoints['AuxOutput'] = aux_output
 
         with tf.variable_scope('Mixed_7a'):
             with tf.variable_scope('Branch_0'):
@@ -166,27 +187,46 @@ def build_inception_resnet_sdc_regression_v1(
                 tower_pool = slim.max_pool2d(net, 3, stride=2, padding='VALID', scope='MaxPool_1a_3x3')
             net = tf.concat(3, [tower_conv_1, tower_conv1_1, tower_conv2_2, tower_pool])
 
-        end_points['Mixed_7a'] = net
+        endpoints['Mixed_7a'] = net
 
         net = slim.repeat(net, 9, block8, scale=0.20)
         net = block8(net, activation_fn=None)
 
         net = slim.conv2d(net, 1536, 1, scope='Conv2d_7b_1x1')
-        end_points['Conv2d_7b_1x1'] = net
+        # For bayesian network
+        if bayesian:
+            net = slim.dropout(net, dropout_keep_prob, is_training=True, scope='Dropout')
+        endpoints['Conv2d_7b_1x1'] = net
 
-        with tf.variable_scope('Logits'):
-            end_points['PrePool'] = net
-            net = slim.avg_pool2d(net, net.get_shape()[1:3], padding='VALID', scope='AvgPool_1a_8x8')
+        # Original logits scope completely removed
+        # with tf.variable_scope('Logits'):
+        #     endpoints['PrePool'] = net
+        #     net = slim.avg_pool2d(net, net.get_shape()[1:3], padding='VALID', scope='AvgPool_1a_8x8')
+        #     net = slim.flatten(net)
+        #
+        #     net = slim.dropout(net, dropout_keep_prob, is_training=is_training, scope='Dropout')
+        #
+        #     endpoints['PreLogitsFlatten'] = net
+        #     logits = slim.fully_connected(net, num_classes, activation_fn=None, scope='Logits')
+        #     endpoints['Logits'] = logits
+        #     endpoints['Predictions'] = tf.nn.softmax(logits, name='Predictions')
+
+        # Outputs scope is added for SDC regression task
+        with tf.variable_scope('Output'):
+            net = slim.avg_pool2d(net, net.get_shape()[1:3], padding='VALID', scope='AvgPool_8x8')
             net = slim.flatten(net)
+            net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
 
-            net = slim.dropout(net, dropout_keep_prob, is_training=is_training, scope='Dropout')
+            output = {}
+            if 'xyz' in output_cfg:
+                output['xyz'] = \
+                    slim.fully_connected(net, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
+            if 'steer' in output_cfg:
+                output['steer'] = \
+                    slim.fully_connected(net, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
+            endpoints['Output'] = output
 
-            end_points['PreLogitsFlatten'] = net
-            logits = slim.fully_connected(net, num_classes, activation_fn=None, scope='Logits')
-            end_points['Logits'] = logits
-            end_points['Predictions'] = tf.nn.softmax(logits, name='Predictions')
-
-    return logits, end_points
+    return output, endpoints
 
 
 build_inception_resnet_sdc_regression_v1.default_image_size = 299
