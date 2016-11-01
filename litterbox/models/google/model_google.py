@@ -27,6 +27,7 @@ class ModelGoogle(model.Model):
         # model_name must correspond to one of google's network names in nets package,
         # see nets_factory.py for valid names.
         self.model_name = model_name
+        self.model_scope = ''
 
     def build_tower(self, images, num_classes, is_training=False, scope=None):
         weight_decay = 0.0001
@@ -73,6 +74,10 @@ class ModelGoogle(model.Model):
             slim.losses.softmax_cross_entropy(
                 tower.aux_outputs, labels,
                 label_smoothing=0.1, weight=0.4, scope='aux_loss')
+
+    def output_scopes(self):
+        scopes = ['logits', 'Logits', 'AuxLogits']
+        return [self.model_scope + '/' + x for x in scopes]
 
     @staticmethod
     def eval_loss_op(logits, labels):

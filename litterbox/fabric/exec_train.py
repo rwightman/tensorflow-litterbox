@@ -234,7 +234,7 @@ def _build_train_graph(feed, model):
     # Add histograms for gradients.
     for grad, var in grads:
         if grad is not None:
-            summaries.append(tf.histogram_summary(var.op.name + '/gradients', grad))
+            summaries.append(tf.histogram_summary(model.strip_common_scope(var.op.name) + '/gradients', grad))
 
     update_ops = []
 
@@ -304,11 +304,11 @@ def train(dataset, processor, model):
         # When fine-tuning a model, we do not restore the logits but instead we
         # randomly initialize the logits. The number of classes in the output of the
         # logit is the number of classes in specified Dataset.
-        restore_logits = not FLAGS.fine_tune
+        restore_outputs = not FLAGS.fine_tune
 
         if FLAGS.pretrained_model_path:
             assert tf.gfile.Exists(FLAGS.pretrained_model_path)
-            variables_to_restore = model.variables_to_restore(restore_logits)
+            variables_to_restore = model.variables_to_restore(restore_outputs)
             if tf.gfile.IsDirectory(FLAGS.pretrained_model_path):
                 model_path = tf.train.latest_checkpoint(FLAGS.pretrained_model_path)
             else:

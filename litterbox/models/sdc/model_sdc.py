@@ -30,6 +30,8 @@ class ModelSdc(fabric.model.Model):
         super(ModelSdc, self).__init__()
         params = fabric.model.merge_params(sdc_default_params, params)
         self.output_cfg = params['outputs']
+        # model variable scope needs to match google net for pretrained weight compat
+        self.model_scope = "InceptionResnetV2"
 
     def build_tower(self, inputs, is_training=False, scope=None):
 
@@ -37,12 +39,7 @@ class ModelSdc(fabric.model.Model):
             output, endpoints = build_inception_resnet_sdc_regression_v1(
                 inputs,
                 self.output_cfg,
-                is_training=is_training,
-                scope=scope)
-
-        #scope_search = re.search('%s_[0-9]*/(\w+)/' % self.TOWER_PREFIX, output['steer'].op.name)
-        #print(scope_search)
-        #self.model_scope = "InceptionResnetV2"
+                is_training=is_training)
 
         aux_output = None
         if 'AuxOutput' in endpoints:
@@ -68,9 +65,15 @@ class ModelSdc(fabric.model.Model):
                 tower.outputs['xyz'], targets[1], aux_predictions=tower.aux_outputs['xyz'])
         if 'steer' in self.output_cfg:
             targets_steer = tf.expand_dims(targets[0], 1)
-            print(tower.outputs['steer'].get_shape(), targets_steer.get_shape())
             fabric.loss.loss_huber_with_aux(
                 tower.outputs['steer'], targets_steer, aux_predictions=tower.aux_outputs['steer'])
+
+    def output_scopes(self):
+        rel_scopes = ['Logits', 'Output/OutputXYZ', 'Output/OutputSteer', 'Output/Fc1',
+                      'AuxLogits/OutputXYZ', 'AuxLogits/OutputSteer', 'AuxLogits/Fc1']
+        abs_scopes = [self.model_scope + '/' + x for x in rel_scopes]
+        #abs_scopes = ['[\w]*/' + x for x in rel_scopes]
+        return abs_scopes
 
     @staticmethod
     def eval_loss_op(predictions, targets):

@@ -25,7 +25,7 @@ def loss_softmax_cross_entropy_with_aux(logits, labels, aux_logits=None):
             aux_logits, dense_labels, label_smoothing=0.1, weight=0.4, scope='aux_loss')
 
 
-def loss_huber(predictions, targets, delta=1.0, scope=None):
+def loss_huber(predictions, targets, delta=1.0, weight=1.0, scope=None):
     with tf.name_scope(scope, "huber_loss", [predictions, targets]):
         predictions.get_shape().assert_is_compatible_with(targets.get_shape())
         predictions = tf.to_float(predictions)
@@ -41,10 +41,10 @@ def loss_huber(predictions, targets, delta=1.0, scope=None):
         right_opt = delta * diff_abs - delta_fact
         losses_val = tf.select(condition, left_opt, right_opt)
 
-        return tf.contrib.losses.compute_weighted_loss(losses_val)
+        return tf.contrib.losses.compute_weighted_loss(losses_val, weight=weight)
 
 
-def loss_huber_with_aux(predictions, targets, delta=1.0, aux_predictions=None):
-    loss_huber(predictions, targets, delta=delta)
+def loss_huber_with_aux(predictions, targets, delta=1.0, weight=1.0, aux_predictions=None):
+    loss_huber(predictions, targets, delta=delta, weight=weight)
     if aux_predictions is not None:
-        loss_huber(aux_predictions, targets, delta=delta, scope='aux_huber_loss')
+        loss_huber(aux_predictions, targets, delta=delta, weight=weight*0.4, scope='aux_huber_loss')

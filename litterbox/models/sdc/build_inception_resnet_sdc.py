@@ -66,7 +66,7 @@ def build_inception_resnet_sdc_regression_v1(
         output_cfg={'steer': 1},
         is_training=True,
         bayesian=False,
-        dropout_keep_prob=0.8,
+        dropout_keep_prob=0.5,
         reuse=None,
         scope='InceptionResnetV2'):
     """Creates the Inception Resnet V2 model.
@@ -215,6 +215,7 @@ def build_inception_resnet_sdc_regression_v1(
         with tf.variable_scope('Output'):
             net = slim.avg_pool2d(net, net.get_shape()[1:3], padding='VALID', scope='AvgPool_8x8')
             net = slim.flatten(net)
+            net = slim.fully_connected(net, 2048, scope='Fc1')
             net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
 
             output = {}

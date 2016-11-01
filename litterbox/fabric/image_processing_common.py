@@ -122,7 +122,8 @@ def distort_affine_cv2(image, alpha_affine=10, random_state=None):
     pts2 = pts1 + random_state.uniform(-alpha_affine, alpha_affine, size=pts1.shape).astype(np.float32)
 
     M = cv2.getAffineTransform(pts1, pts2)
-    distorted_image = cv2.warpAffine(image, M, shape_size[::-1], borderMode=cv2.BORDER_REFLECT_101)
+    distorted_image = cv2.warpAffine(
+        image, M, shape_size[::-1], borderMode=cv2.BORDER_REPLICATE) #cv2.BORDER_REFLECT_101)
 
     return distorted_image
 

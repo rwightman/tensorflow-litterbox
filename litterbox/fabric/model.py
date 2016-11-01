@@ -94,7 +94,6 @@ class Model(object):
         with tf.name_scope('summaries'):
             act_ops = {}
             for x in tower.endpoints.values():
-                print(x)
                 if isinstance(x, dict):
                     for y in x.values():
                         act_ops[y] = y.op.name
