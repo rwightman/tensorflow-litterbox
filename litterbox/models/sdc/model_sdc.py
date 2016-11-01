@@ -20,7 +20,7 @@ from .build_inception_resnet_sdc import *
 slim = tf.contrib.slim
 
 sdc_default_params = {
-    'outputs': {'steer': 1}, #, 'xyz': 2},
+    'outputs': {'steer': 1, 'xyz': 2},
 }
 
 
@@ -61,12 +61,13 @@ class ModelSdc(fabric.model.Model):
         tower = self.tower(scope)
         assert 'xyz' in self.output_cfg or 'steer' in self.output_cfg
         if 'xyz' in self.output_cfg:
+            target_xyz = targets[1]
             fabric.loss.loss_huber_with_aux(
-                tower.outputs['xyz'], targets[1], aux_predictions=tower.aux_outputs['xyz'])
+                tower.outputs['xyz'], target_xyz, aux_predictions=tower.aux_outputs['xyz'])
         if 'steer' in self.output_cfg:
-            targets_steer = tf.expand_dims(targets[0], 1)
+            target_steer = tf.expand_dims(targets[0], 1)
             fabric.loss.loss_huber_with_aux(
-                tower.outputs['steer'], targets_steer, aux_predictions=tower.aux_outputs['steer'])
+                tower.outputs['steer'], target_steer, aux_predictions=tower.aux_outputs['steer'])
 
     def output_scopes(self):
         rel_scopes = ['Logits', 'Output/OutputXYZ', 'Output/OutputSteer', 'Output/Fc1',
