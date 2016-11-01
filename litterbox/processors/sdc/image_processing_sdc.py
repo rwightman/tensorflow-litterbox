@@ -36,9 +36,9 @@ distort_params_sdc = {
     'v_flip': False,
     'elastic_distortion': False,
     'affine_distortion': True,
-    'aspect_ratio_range': [0.88889, 1.125],
+    'aspect_ratio_range': [0.889, 1.125],
     'area_range': [0.7, 1.0],
-    'min_object_covered': 0.8,
+    'min_object_covered': 0.875,
 }
 
 
@@ -63,10 +63,16 @@ def image_preprocess_sdc(image_buffer, camera_id, height, width, img_format='jpg
         right_string = tf.constant('right_camera', tf.string)
         left_camera = tf.equal(camera_id, left_string)
         right_camera = tf.equal(camera_id, right_string)
-        bbox_left = tf.constant([0.0, 0.0, 1.0, 0.75], dtype=tf.float32, shape=[1, 1, 4])
-        bbox_right = tf.constant([0.0, 0.25, 1.0, 1.0], dtype=tf.float32, shape=[1, 1, 4])
-        bbox_center = tf.constant([0.0, 0.0, 1.0, 1.0], dtype=tf.float32, shape=[1, 1, 4])
-        case_pairs = [(left_camera, lambda: bbox_left), (right_camera, lambda: bbox_right)]
+
+        # bbox are 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
+        # where each coordinate is [0, 1) and the coordinates are arranged as [ymin, xmin, ymax, xmax].
+        # for this code we want to bias the bbox for left camera to the right side, for the right camera
+        # to the left side, and leave center as center
+
+        bbox_left = tf.constant([0.1, 0.0, 0.9, 0.8], dtype=tf.float32, shape=[1, 1, 4])
+        bbox_right = tf.constant([0.1, 0.2, 0.9, 1.0], dtype=tf.float32, shape=[1, 1, 4])
+        bbox_center = tf.constant([0.05, 0.05, 0.95, 0.95], dtype=tf.float32, shape=[1, 1, 4])
+        case_pairs = [(left_camera, lambda: bbox_right), (right_camera, lambda: bbox_left)]
         bbox = tf.case(case_pairs, lambda: bbox_center, exclusive=False, name='case')
 
         distort_params = distort_params_default
