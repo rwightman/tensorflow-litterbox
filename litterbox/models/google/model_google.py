@@ -21,19 +21,19 @@ slim = tf.contrib.slim
 
 class ModelGoogle(model.Model):
 
-    def __init__(self, model_name='inception_resnet_v2'):
+    def __init__(self, num_classes=1000, network='inception_resnet_v2'):
         super(ModelGoogle, self).__init__()
 
         # model_name must correspond to one of google's network names in nets package,
         # see nets_factory.py for valid names.
-        self.model_name = model_name
-        self.model_scope = ''
+        self.network = network
+        self.num_classes = num_classes
 
-    def build_tower(self, images, num_classes, is_training=False, scope=None):
+    def build_tower(self, images, is_training=False, scope=None):
         weight_decay = 0.0001
         network_fn = nets_factory.get_network_fn(
-            self.model_name,
-            num_classes=num_classes,
+            self.network,
+            num_classes=self.num_classes,
             weight_decay=weight_decay,
             is_training=is_training)
         logits, endpoints = network_fn(images)
@@ -42,7 +42,7 @@ class ModelGoogle(model.Model):
         # be removed for smaller Tensorboard tags
         scope_search = re.search('%s_[0-9]*/(\w+)/' % self.TOWER_PREFIX, logits.op.name)
         if scope_search:
-            self.model_scope = scope_search.group(1)
+            self.model_variable_scope = scope_search.group(1)
 
         if 'AuxLogits' in endpoints:
             # Grab the logits associated with the side head. Employed during training.
@@ -64,7 +64,7 @@ class ModelGoogle(model.Model):
 
     def add_tower_loss(self, labels, scope=None):
         tower = self.tower(scope)
-        num_classes = tower.logits.get_shape()[-1].value
+        num_classes = tower.outputs.get_shape()[-1].value
         labels = slim.one_hot_encoding(labels, num_classes=num_classes)
 
         slim.losses.softmax_cross_entropy(
@@ -77,7 +77,7 @@ class ModelGoogle(model.Model):
 
     def output_scopes(self):
         scopes = ['logits', 'Logits', 'AuxLogits']
-        return [self.model_scope + '/' + x for x in scopes]
+        return [self.model_variable_scope + '/' + x for x in scopes]
 
     @staticmethod
     def eval_loss_op(logits, labels):

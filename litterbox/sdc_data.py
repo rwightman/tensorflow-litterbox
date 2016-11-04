@@ -28,7 +28,7 @@ class SdcData(DatasetRecord):
         """Returns the number of examples in the data subset."""
         #FIXME figure out counts for final train/val datasets
         if self.subset == 'train':
-            return 230898
+            return 964809
         elif self.subset == 'validation':
-            return 0
+            return 39000
 

@@ -61,9 +61,10 @@ def block8(net, scale=1.0, activation_fn=tf.nn.relu, scope=None, reuse=None):
     return net
 
 
-def build_inception_resnet_sdc_regression_v1(
+def build_inception_resnet_sdc_regression(
         inputs,
         output_cfg={'steer': 1},
+        version=1,
         is_training=True,
         bayesian=False,
         dropout_keep_prob=0.5,
@@ -165,11 +166,11 @@ def build_inception_resnet_sdc_regression_v1(
             # regression aux outputs
             aux_output = {}
             if 'xyz' in output_cfg:
-                aux_output['xyz'] = \
-                    slim.fully_connected(aux, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
+                aux_output['xyz'] = slim.fully_connected(
+                    aux, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
             if 'steer' in output_cfg:
-                aux_output['steer'] = \
-                    slim.fully_connected(aux, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
+                aux_output['steer'] = slim.fully_connected(
+                    aux, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
             endpoints['AuxOutput'] = aux_output
 
         with tf.variable_scope('Mixed_7a'):
@@ -215,22 +216,28 @@ def build_inception_resnet_sdc_regression_v1(
         with tf.variable_scope('Output'):
             net = slim.avg_pool2d(net, net.get_shape()[1:3], padding='VALID', scope='AvgPool_8x8')
             net = slim.flatten(net)
-            net = slim.fully_connected(net, 2048, scope='Fc1')
-            net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
+            if version > 1:
+                net = slim.fully_connected(net, 1536, scope='Fc1')
+                net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
+                net = slim.fully_connected(net, 192, scope='Fc2')
+            else:
+                net = slim.fully_connected(net, 2048, scope='Fc1')
+                net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
 
             output = {}
             if 'xyz' in output_cfg:
-                output['xyz'] = \
-                    slim.fully_connected(net, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
+                output['xyz'] = slim.fully_connected(
+                    net, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
             if 'steer' in output_cfg:
-                output['steer'] = \
-                    slim.fully_connected(net, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
+                output['steer'] = slim.fully_connected(
+                    net, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
+
             endpoints['Output'] = output
 
     return output, endpoints
 
 
-build_inception_resnet_sdc_regression_v1.default_image_size = 299
+build_inception_resnet_sdc_regression.default_image_size = 299
 
 
 def inception_resnet_v2_arg_scope(weight_decay=0.00004,

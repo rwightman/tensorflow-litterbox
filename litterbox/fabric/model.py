@@ -41,7 +41,7 @@ class Model(object):
     TOWER_PREFIX = 'tower'
 
     def __init__(self):
-        self.model_scope = None
+        self.model_variable_scope = None
         self._last_tower = None
         self._towers = {}
 
@@ -110,10 +110,11 @@ class Model(object):
                 tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(endpoint))
 
     def strip_common_scope(self, input_name):
-        if self.model_scope:
-            output_name = re.sub('(%s_[0-9]*/)?%s/' % (self.TOWER_PREFIX, self.model_scope), '', input_name)
-        else:
-            output_name = re.sub('%s_[0-9]*/' % self.TOWER_PREFIX, '', input_name)
+        # strip tower scope, present in ops
+        output_name = re.sub('%s_[0-9]*/' % self.TOWER_PREFIX, '', input_name)
+        # strip extra model variable scope, present in ops and variables
+        if self.model_variable_scope:
+            output_name = re.sub('%s/' % self.model_variable_scope, '', output_name)
         return output_name
 
 

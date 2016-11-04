@@ -40,8 +40,19 @@ try:
 except ImportError:
     has_skimage = False
 
+# FIXME these decentralized flags get REALLY annoying with module import conflicts, in common spot for now
+FLAGS = tf.app.flags.FLAGS
+tf.app.flags.DEFINE_integer('image_size', 299,
+                            """Provide square images of this size.""")
+tf.app.flags.DEFINE_float('image_aspect', 0.0,
+                          """Aspect ratio based sizing, square image_size*image_size if 0""")
+tf.app.flags.DEFINE_string('image_col', 'default',
+                           """Either 'default' RGB [-1,1] or 'caffe' BGR [0,255]""")
+tf.app.flags.DEFINE_string('image_fmt', 'jpg',
+                           """Either 'jpg', 'png', or 'gif'""")
 
-def decode_compressed_image(image_buffer, img_format='jpg', depth=3, scope=None):
+
+def decode_compressed_image(image_buffer, image_fmt='jpg', depth=3, scope=None):
     """Decode a JPEG string into one 3-D float image Tensor.
 
     Args:
@@ -55,14 +66,14 @@ def decode_compressed_image(image_buffer, img_format='jpg', depth=3, scope=None)
         # Note that the resulting image contains an unknown height and width
         # that is set dynamically by decode_jpeg. In other words, the height
         # and width of image is unknown at compile-time.
-        img_format = str.lower(img_format)
-        if img_format == 'png':
+        image_fmt = str.lower(image_fmt)
+        if image_fmt == 'png':
             image = tf.image.decode_png(image_buffer, channels=depth)
-        elif img_format == 'gif':
+        elif image_fmt == 'gif':
             assert depth == 3
             image = tf.image.decode_gif(image_buffer)
         else:
-            assert img_format == 'jpg' or img_format == 'jpeg'
+            assert image_fmt == 'jpg' or image_fmt == 'jpeg'
             image = tf.image.decode_jpeg(image_buffer, channels=depth)
 
         # After this point, all image pixels reside in [0,1)
@@ -72,7 +83,7 @@ def decode_compressed_image(image_buffer, img_format='jpg', depth=3, scope=None)
         return image
 
 
-def distort_color(image, thread_id=0, scope=None):
+def distort_color(image, hue_delta=0.2, thread_id=0, scope=None):
     """Distort the color of the image.
 
     Each color distortion is non-commutative and thus ordering of the color ops
@@ -82,6 +93,7 @@ def distort_color(image, thread_id=0, scope=None):
 
     Args:
       image: Tensor containing single image.
+      hue_delta: range for random hue shift
       thread_id: preprocessing thread ID.
       scope: Optional scope for op_scope.
     Returns:
@@ -93,13 +105,13 @@ def distort_color(image, thread_id=0, scope=None):
         if color_ordering == 0:
             image = tf.image.random_brightness(image, max_delta=32. / 255.)
             image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
-            image = tf.image.random_hue(image, max_delta=0.2)
+            image = tf.image.random_hue(image, max_delta=hue_delta)
             image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
         elif color_ordering == 1:
             image = tf.image.random_brightness(image, max_delta=32. / 255.)
             image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
             image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
-            image = tf.image.random_hue(image, max_delta=0.2)
+            image = tf.image.random_hue(image, max_delta=hue_delta)
 
         # The random_* ops do not necessarily clamp.
         image = tf.clip_by_value(image, 0.0, 1.0)
@@ -191,6 +203,7 @@ distort_params_default = {
     'aspect_ratio_range': [0.67, 1.33],
     'area_range': [0.1, 1.0],
     'min_object_covered': 0.1,
+    'hue_delta': 0.2,
 }
 
 
@@ -283,7 +296,7 @@ def process_for_train(image, height, width, bbox=None, params=distort_params_def
             distorted_image = tf.image.random_flip_up_down(distorted_image)
 
         # Randomly distort the colors.
-        distorted_image = distort_color(distorted_image, thread_id)
+        distorted_image = distort_color(distorted_image, hue_delta=params['hue_delta'], thread_id=thread_id)
 
         if not thread_id:
             tf.image_summary('final_distorted_image', tf.expand_dims(distorted_image, 0))
@@ -291,7 +304,7 @@ def process_for_train(image, height, width, bbox=None, params=distort_params_def
         return distorted_image
 
 eval_params_default = {
-    'central_crop_fraction': 0.975,
+    'central_crop_fraction': 0.90,
 }
 
 

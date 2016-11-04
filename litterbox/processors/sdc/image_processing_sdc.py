@@ -30,6 +30,8 @@ import tensorflow as tf
 import numpy as np
 from fabric.image_processing_common import *
 
+SDC_MEAN = [0.2087998337, 0.240992306, 0.284853019]
+SDC_STD = [0.2160449662, 0.2489588968, 0.2898496487]
 
 distort_params_sdc = {
     'h_flip': False,
@@ -37,12 +39,15 @@ distort_params_sdc = {
     'elastic_distortion': False,
     'affine_distortion': True,
     'aspect_ratio_range': [0.889, 1.125],
-    'area_range': [0.7, 1.0],
+    'area_range': [0.8, 1.0],
     'min_object_covered': 0.875,
+    'hue_delta': 0.1
 }
 
 
-def image_preprocess_sdc(image_buffer, camera_id, height, width, img_format='jpg', train=False, thread_id=0):
+def image_preprocess_sdc(
+        image_buffer, camera_id, height, width,
+        image_fmt='jpg', train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -56,7 +61,7 @@ def image_preprocess_sdc(image_buffer, camera_id, height, width, img_format='jpg
     if not height or not width:
         raise ValueError('Please specify target image height & width.')
 
-    image = decode_compressed_image(image_buffer, img_format)
+    image = decode_compressed_image(image_buffer, image_fmt)
 
     if train:
         left_string = tf.constant('left_camera', tf.string)
@@ -83,7 +88,11 @@ def image_preprocess_sdc(image_buffer, camera_id, height, width, img_format='jpg
         image = process_for_eval(image, height, width)
 
     # Rescale to [-1,1] instead of [0, 1)
-    image = tf.sub(image, 0.5)
-    image = tf.mul(image, 2.0)
+    if True:
+        image = tf.sub(image, SDC_MEAN)
+        image = tf.div(image, SDC_STD)
+    else:
+        image = tf.sub(image, 0.5)
+        image = tf.mul(image, 2.0)
 
     return image

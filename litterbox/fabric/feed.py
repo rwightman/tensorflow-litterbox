@@ -215,6 +215,7 @@ class Feed(object):
         if data_files is None:
             raise ValueError('No data files found for this dataset')
 
+        #FIXME make this configurable, not all datasets have labels like this
         data_labels = self.dataset.label_indices()
         if data_labels is None:
             raise ValueError('No data labels found for this dataset')
@@ -226,7 +227,7 @@ class Feed(object):
         capacity = min_after_dequeue + 3 * self.batch_size
         input_queue = tf.train.slice_input_producer(
             [filename_tensor, label_tensor],
-            num_epochs=1 if train else None,
+            #num_epochs=1 if train else None,
             shuffle=train,
             capacity=capacity)
 
@@ -234,9 +235,13 @@ class Feed(object):
         for thread_id in range(self.num_preprocess_threads):
             filename = input_queue[0]
             label_index = input_queue[1]
-            image_buffer = tf.read_file(filename)
-            data_packed = [image_buffer, label_index, filename]
-            processed = self.processor.preprocess_data(data_packed, thread_id=thread_id)
+            input_buffer = tf.read_file(filename)
+            #FIXME super hack hack hack, need to fix this so we can have processing pipeline that
+            #doesn't bother with targets for inference and a file pipeline that can actually handle
+            #targets
+            data_packed = [
+                input_buffer, label_index, filename, label_index, [label_index, label_index]]
+            processed = self.processor.process_data(data_packed, thread_id=thread_id)
             inputs.append(list(processed))
 
         return inputs

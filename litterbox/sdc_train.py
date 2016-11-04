@@ -30,8 +30,11 @@ def main(_):
 
     dataset = SdcData(subset=FLAGS.subset)
     processor = ProcessorSdc()
-    model_params = {}
-    model = ModelSdc(model_params)
+    model_params = {
+        'outputs': {'steer': 1},
+        'network': 'resnet_v1_152',
+    }
+    model = ModelSdc(params=model_params)
     exec_train.train(dataset, processor, model)
 
 if __name__ == '__main__':

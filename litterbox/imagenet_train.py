@@ -18,6 +18,7 @@ from fabric import exec_train
 from imagenet_data import ImagenetData
 from models import ModelInception
 from models import ModelGoogle
+from processors import ProcessorImagenet
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -27,13 +28,15 @@ tf.app.flags.DEFINE_string('subset', 'train',
 def main(_):
     util.check_tensorflow_version()
 
+    processor = ProcessorImagenet()
+
     dataset = ImagenetData(subset=FLAGS.subset)
-    #model = ModelGoogle()
-    model = ModelInception(variant=ModelInception.Variant.ResnetV2)
+    model = ModelGoogle(network='resnet_v1_152')
+    #model = ModelInception(variant=ModelInception.Variant.ResnetV2)
     #model = ModelResnet(num_layers=50, width_factor=1)
     #model = ModelVgg(19)
 
-    exec_train.train(dataset, model)
+    exec_train.train(dataset, processor=processor, model=model)
 
 if __name__ == '__main__':
     tf.app.run()

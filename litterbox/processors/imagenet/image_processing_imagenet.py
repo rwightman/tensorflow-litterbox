@@ -58,7 +58,8 @@ IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD = [0.229, 0.224, 0.225]
 
 
-def image_preprocess(image_buffer, height, width, bbox=None, caffe_fmt=False, train=False, thread_id=0):
+def image_preprocess_imagenet(
+        image_buffer, height, width, bbox=None, caffe_fmt=False, train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -78,7 +79,7 @@ def image_preprocess(image_buffer, height, width, bbox=None, caffe_fmt=False, tr
     if not height or not width:
         raise ValueError('Please specify target image height & width.')
 
-    image = decode_jpeg(image_buffer)
+    image = decode_compressed_image(image_buffer)
 
     if train:
         if bbox is None:

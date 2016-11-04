@@ -17,6 +17,7 @@ from fabric import util
 from fabric import exec_eval
 from sdc_data import SdcData
 from models import ModelSdc
+from processors import ProcessorSdc
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -28,8 +29,13 @@ def main(_):
     util.check_tensorflow_version()
 
     dataset = SdcData(subset=FLAGS.subset)
-    model = ModelSdc()
-    exec_eval.evaluate(dataset, model)
+    processor = ProcessorSdc()
+    model_params = {
+        'outputs': {'steer': 1},
+        'network': 'resnet_v1_152',
+    }
+    model = ModelSdc(params=model_params)
+    exec_eval.evaluate(dataset, processor, model)
 
 if __name__ == '__main__':
     tf.app.run()

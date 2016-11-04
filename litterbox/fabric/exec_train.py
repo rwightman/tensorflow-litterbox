@@ -185,7 +185,7 @@ def _build_train_graph(feed, model):
     # Calculate the gradients for each model tower.
     tower_grads = []
     for i in range(num_gpus):
-        inputs, _, targets = feed.processor.map_inputs(train_inputs, i)
+        inputs, targets, _ = feed.processor.map_inputs(train_inputs, i)
         with tf.device('/gpu:%d' % i):
             with tf.name_scope(model.scope_name(i)) as scope:
                 # Force all Variables to reside on the CPU.

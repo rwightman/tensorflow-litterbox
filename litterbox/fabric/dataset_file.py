@@ -42,12 +42,12 @@ class DatasetFile(Dataset):
     """A simple class for handling file (non-record) data sets."""
     metaclass__ = ABCMeta
 
-    def __init__(self, name, subset, add_background_class=False):
+    def __init__(self, name, subset, types=('.jpg', '.jpeg'), add_background_class=False):
         """Initialize dataset using a subset and the path to the data."""
         super(DatasetFile, self).__init__(name, subset, is_record=False)
         self.file_folder = os.path.join(FLAGS.data_dir, subset)
         self.label_counts, self.image_label_names, self.image_filenames = \
-            get_image_files_and_labels(self.file_folder)
+            get_image_files_and_labels(self.file_folder, types=types)
         self.num_examples = sum(self.label_counts.values())
 
         self.label_names = []
@@ -57,6 +57,7 @@ class DatasetFile(Dataset):
 
         # Generate label mappings
         # TODO This could be passed in if defined externally?
+        # TODO make label part of dataset more generic, ie general target value handling
         # NOTE Currently assumes lexical order for labels (aside from 'background')
         self.label_names += sorted(self.label_counts.keys())
         self.label_name_to_index = {v: k for (k, v) in enumerate(self.label_names)}

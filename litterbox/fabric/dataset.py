@@ -50,7 +50,6 @@ class Dataset(object):
         self.is_record = is_record
         self.has_background_class = False
 
-    @abstractmethod
     def num_classes(self):
         """Returns the number of classes in the data set."""
         return 0

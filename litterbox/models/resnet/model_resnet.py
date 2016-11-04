@@ -121,17 +121,24 @@ class ModelResnet(fabric.Model):
         tower = self.tower(scope)
         fabric.loss.loss_softmax_cross_entropy(tower.outputs, labels)
 
+    def get_predictions(self, outputs, remove_background=False):
+        if remove_background:
+            outputs = tf.slice(outputs, [0, 1], [-1, -1])
+        return tf.nn.softmax(outputs)
+
     def output_scopes(self):
         return ['Outputs/Logits']
 
     @staticmethod
-    def eval_loss_op(logits, labels):
+    def eval_ops(logits, labels):
         """Generate a simple (non tower based) loss op for use in evaluation.
 
         Args:
           logits: List of logits from inference(). Shape [batch_size, num_classes], dtype float32/64
           labels: Labels from distorted_inputs or inputs(). batch_size vector with int32/64 values in [0, num_classes).
         """
-        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
-        loss = tf.reduce_mean(cross_entropy)
-        return loss
+        top_1_op = tf.nn.in_top_k(logits, labels, 1)
+        top_5_op = tf.nn.in_top_k(logits, labels, 5)
+        loss__op = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
+        #loss_op = tf.reduce_mean(cross_entropy)
+        return {'top 1': top_1_op, 'top 5': top_5_op, 'loss': loss__op}
