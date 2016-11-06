@@ -41,17 +41,23 @@ distort_params_sdc = {
     'aspect_ratio_range': [0.889, 1.125],
     'area_range': [0.8, 1.0],
     'min_object_covered': 0.875,
-    'hue_delta': 0.1
+    'hue_delta': 0.1,
 }
 
 
 def image_preprocess_sdc(
-        image_buffer, camera_id, height, width,
-        image_fmt='jpg', train=False, thread_id=0):
+        image_buffer, camera_id,
+        height, width, image_fmt='jpg',
+        standardize=True, train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
-      image_buffer: JPEG encoded string Tensor
+      image_buffer: encoded string Tensor
+      camera_id: string identifier of source camera
+      height: image target height
+      width: image target width
+      image_fmt: encode format of eimage
+      standardize: boolean, standardize to dataset mean/std deviation vs rescale
       train: boolean
       thread_id: integer indicating preprocessing thread
 
@@ -74,8 +80,8 @@ def image_preprocess_sdc(
         # for this code we want to bias the bbox for left camera to the right side, for the right camera
         # to the left side, and leave center as center
 
-        bbox_left = tf.constant([0.1, 0.0, 0.9, 0.8], dtype=tf.float32, shape=[1, 1, 4])
-        bbox_right = tf.constant([0.1, 0.2, 0.9, 1.0], dtype=tf.float32, shape=[1, 1, 4])
+        bbox_left = tf.constant([0.05, 0.0, 0.95, 0.9], dtype=tf.float32, shape=[1, 1, 4])
+        bbox_right = tf.constant([0.05, 0.1, 0.95, 1.0], dtype=tf.float32, shape=[1, 1, 4])
         bbox_center = tf.constant([0.05, 0.05, 0.95, 0.95], dtype=tf.float32, shape=[1, 1, 4])
         case_pairs = [(left_camera, lambda: bbox_right), (right_camera, lambda: bbox_left)]
         bbox = tf.case(case_pairs, lambda: bbox_center, exclusive=False, name='case')
@@ -88,7 +94,7 @@ def image_preprocess_sdc(
         image = process_for_eval(image, height, width)
 
     # Rescale to [-1,1] instead of [0, 1)
-    if True:
+    if standardize:
         image = tf.sub(image, SDC_MEAN)
         image = tf.div(image, SDC_STD)
     else:
