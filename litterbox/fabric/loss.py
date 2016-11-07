@@ -54,3 +54,9 @@ def loss_huber_with_aux(predictions, targets, delta=1.0, weight=1.0, aux_predict
     loss_huber(predictions, targets, delta=delta, weight=weight)
     if aux_predictions is not None:
         loss_huber(aux_predictions, targets, delta=delta, weight=weight*0.4, scope='aux_huber_loss')
+
+
+def loss_mse_with_aux(predictions, targets, aux_predictions=None):
+    tf.contrib.losses.mean_squared_error(predictions, targets, weight=1.0)
+    if aux_predictions is not None:
+        tf.contrib.losses.mean_squared_error(aux_predictions, targets, weight=0.4, scope='aux_loss')

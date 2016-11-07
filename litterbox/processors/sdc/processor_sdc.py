@@ -20,6 +20,11 @@ from processors.sdc.image_processing_sdc import *
 from fabric.image_processing_common import *  # FIXME for annoying flags
 
 
+STEERING_STD = 0.3 #rounded
+GPS_MEAN = [37.5,-122.3] # rounded
+GPS_STD = [0.2, 0.2]  # approx
+
+
 def mu_law_enc(data, input_range=2**14, output_range=2**8, mu=255):
     with tf.name_scope('mu_enc'):
         mu = tf.cast(mu, tf.float32)
@@ -71,6 +76,8 @@ class ProcessorSdc(fabric.Processor):
             image, camera_id,
             height=self.height, width=self.width, image_fmt=self.image_fmt,
             train=train, thread_id=thread_id)
+        steering_angle = steering_angle / STEERING_STD
+        gps_coord = (gps_coord - GPS_MEAN) / GPS_STD
         if False:
             # convert steering to integer encoding
             steering_angle_i64 = tf.cast(tf.round(steering_angle / .00174533), tf.int64)

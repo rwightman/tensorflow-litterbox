@@ -20,8 +20,9 @@ slim = tf.contrib.slim
 
 sdc_default_params = {
     'outputs': {'steer': 1, 'xyz': 2},
-    'network': 'inception_resnet_v2',
-    'version': 1,
+    'network': 'inception_resnet_v2', # or one of other options in network_map
+    'regression_loss': 'mse', # or huber
+    'version': 2,
 }
 
 network_map = {
@@ -56,6 +57,10 @@ class ModelSdc(fabric.model.Model):
             self.network = 'inception_resnet_v2'
             self.model_variable_scope = "InceptionResnetV2"
         self.version = params['version']
+        if params['regression_loss'] == 'huber':
+            self.regression_loss = fabric.loss.loss_huber_with_aux
+        else:
+            self.regression_loss = fabric.loss.loss_mse_with_aux
 
     def build_tower(self, inputs, is_training=False, scope=None):
 
@@ -91,7 +96,7 @@ class ModelSdc(fabric.model.Model):
             aux_output_xyz = None
             if tower.aux_outputs:
                 aux_output_xyz = tower.aux_outputs['xyz']
-            fabric.loss.loss_huber_with_aux(
+            self.regression_loss(
                 tower.outputs['xyz'], target_xyz, aux_predictions=aux_output_xyz)
 
         if 'steer' in self.output_cfg:
@@ -106,9 +111,9 @@ class ModelSdc(fabric.model.Model):
             else:
                 assert self.output_cfg['steer'] == 1
                 # steer is float target/output, use regression /w huber loss
-                fabric.loss.loss_huber_with_aux(
+                self.regression_loss(
                     tower.outputs['steer'], target_steer, aux_predictions=aux_output_steer)
-
+                
     def get_predictions(self, outputs, remove_background=False):
         #FIXME just pass through for regression, add decoders for specific output cfgs, etc
         return outputs
@@ -152,9 +157,13 @@ class ModelSdc(fabric.model.Model):
             #ops['steer_targ'] = steer_targ
 
         if 'xyz' in predictions:
-            xyz_loss = fabric.loss.metric_huber(predictions, targets)
-            xyz_mse = tf.squared_difference(predictions, targets, name='xyz_mse_eval')
+            xyz_targ = targets[1]
+            xyz_pred = predictions['xyz']
+            xyz_loss = fabric.loss.metric_huber(xyz_pred, xyz_targ)
+            xyz_mse = tf.squared_difference(xyz_pred, xyz_targ, name='xyz_mse_eval')
             ops['xyz_loss'] = xyz_loss
             ops['xyz_mse'] = xyz_mse
+            ops['xyz_pred'] = xyz_pred
+            ops['xyz_targ'] = xyz_targ
 
         return ops

@@ -92,16 +92,19 @@ def parse_proto_sdc(example_serialized):
     gps_timestamp = features['gps/timestamp']
     gps_lat = features['gps/lat']
     gps_long = features['gps/long']
-    gps_lat_delta = tf.cast(gps_lat[1] - gps_lat[0], tf.float64)
-    gps_long_delta = tf.cast(gps_long[1] - gps_long[0], tf.float64)
-    gps_time_delta = tf.cast(gps_timestamp[1] - gps_timestamp[0], tf.float64)
-    gps_lat_slope = tf.cond(
-        tf.equal(gps_time_delta, zero_const), lambda: zero_const, lambda: gps_lat_delta / gps_time_delta)
-    gps_long_slope = tf.cond(
-        tf.equal(gps_time_delta, zero_const), lambda: zero_const, lambda: gps_long_delta / gps_time_delta)
-    gps_image_time_delta = tf.cast(image_timestamp - gps_timestamp[0], tf.float64)
-    gps_lat_interpolated = tf.cast(gps_lat[0], tf.float64) + gps_lat_slope * gps_image_time_delta
-    gps_long_interpolated = tf.cast(gps_long[0], tf.float64) + gps_long_slope * gps_image_time_delta
-    gps_f32 = tf.concat(0, [tf.cast(gps_lat_interpolated, tf.float32), tf.cast(gps_long_interpolated, tf.float32)])
+    if True:
+        gps_lat_delta = tf.cast(gps_lat[1] - gps_lat[0], tf.float64)
+        gps_long_delta = tf.cast(gps_long[1] - gps_long[0], tf.float64)
+        gps_time_delta = tf.cast(gps_timestamp[1] - gps_timestamp[0], tf.float64)
+        gps_lat_slope = tf.cond(
+            tf.equal(gps_time_delta, zero_const), lambda: zero_const, lambda: gps_lat_delta / gps_time_delta)
+        gps_long_slope = tf.cond(
+            tf.equal(gps_time_delta, zero_const), lambda: zero_const, lambda: gps_long_delta / gps_time_delta)
+        gps_image_time_delta = tf.cast(image_timestamp - gps_timestamp[0], tf.float64)
+        gps_lat_interpolated = tf.cast(gps_lat[0], tf.float64) + gps_lat_slope * gps_image_time_delta
+        gps_long_interpolated = tf.cast(gps_long[0], tf.float64) + gps_long_slope * gps_image_time_delta
+        gps_f32 = tf.concat(0, [tf.cast(gps_lat_interpolated, tf.float32), tf.cast(gps_long_interpolated, tf.float32)])
+    else:
+        gps_f32 = tf.pack([tf.cast(gps_lat[1], tf.float32), tf.cast(gps_long[1], tf.float32)])
 
     return features['image/encoded'], camera_id, image_timestamp, steering_angle_f32, gps_f32

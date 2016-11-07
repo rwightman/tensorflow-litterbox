@@ -270,7 +270,7 @@ def resnet_v1_sdc(
         blocks,
         output_cfg,
         version,
-        dropout_keep_prob=0.5,
+        dropout_keep_prob=0.7,
         bayesian=False,
         is_training=True,
         global_pool=True,

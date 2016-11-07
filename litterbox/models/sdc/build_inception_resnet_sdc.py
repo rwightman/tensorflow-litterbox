@@ -67,7 +67,7 @@ def build_inception_resnet_sdc_regression(
         version=1,
         is_training=True,
         bayesian=False,
-        dropout_keep_prob=0.5,
+        dropout_keep_prob=0.7,
         reuse=None,
         scope='InceptionResnetV2'):
     """Creates the Inception Resnet V2 model.
@@ -219,7 +219,7 @@ def build_inception_resnet_sdc_regression(
             if version > 1:
                 net = slim.fully_connected(net, 1536, scope='Fc1')
                 net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
-                net = slim.fully_connected(net, 192, scope='Fc2')
+                net = slim.fully_connected(net, 768, scope='Fc2')
             else:
                 net = slim.fully_connected(net, 2048, scope='Fc1')
                 net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
