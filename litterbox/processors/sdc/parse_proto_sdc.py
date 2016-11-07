@@ -74,7 +74,7 @@ def parse_proto_sdc(example_serialized):
 
     steering_timestamp = features['steer/timestamp']
     steering_angle = features['steer/angle']
-    if False:
+    if True:
         # interpolate
         steering_angle_delta = tf.cast(steering_angle[1] - steering_angle[0], tf.float64)
         steering_time_delta = tf.cast(steering_timestamp[1] - steering_timestamp[0], tf.float64)

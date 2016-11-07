@@ -164,7 +164,7 @@ def evaluate(dataset, processor, model):
         outputs = model.build_tower(inputs)
 
         # Calculate predictions.
-        eval_ops = model.eval_ops(outputs, targets, processor.decode_steering)
+        eval_ops = model.eval_ops(outputs, targets)
 
         # Restore the moving average version of the learned variables for eval.
         if FLAGS.moving_average_decay:

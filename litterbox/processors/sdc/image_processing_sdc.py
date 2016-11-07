@@ -28,6 +28,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 import numpy as np
+from copy import deepcopy
 from fabric.image_processing_common import *
 
 SDC_MEAN = [0.2087998337, 0.240992306, 0.284853019]
@@ -37,8 +38,8 @@ distort_params_sdc = {
     'h_flip': False,
     'v_flip': False,
     'elastic_distortion': False,
-    'affine_distortion': True,
-    'aspect_ratio_range': [0.889, 1.125],
+    'affine_distortion': False,
+    'aspect_ratio_range': [0.909, 1.1],
     'area_range': [0.8, 1.0],
     'min_object_covered': 0.875,
     'hue_delta': 0.1,
@@ -86,8 +87,11 @@ def image_preprocess_sdc(
         case_pairs = [(left_camera, lambda: bbox_right), (right_camera, lambda: bbox_left)]
         bbox = tf.case(case_pairs, lambda: bbox_center, exclusive=False, name='case')
 
-        distort_params = distort_params_default
-        distort_params.update(distort_params_sdc)
+        distort_params = deepcopy(distort_params_default)
+        distort_params.update(deepcopy(distort_params_sdc))
+        distort_params['aspect_ratio_range'][0] *= (width / height)
+        distort_params['aspect_ratio_range'][1] *= (width / height)
+
         image = process_for_train(
             image, height=height, width=width, bbox=bbox, params=distort_params, thread_id=thread_id)
     else:
