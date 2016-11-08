@@ -149,18 +149,16 @@ def build_inception_resnet_sdc_regression(
         with tf.variable_scope('AuxLogits'):
             aux = slim.avg_pool2d(net, 5, stride=3, padding='VALID', scope='Conv2d_1a_3x3')
             aux = slim.conv2d(aux, 128, 1, scope='Conv2d_1b_1x1')
+            print('AuxLogits/Conv2d_1b_1x1', aux.get_shape())
 
             #FIXME slice this layer off?
             aux = slim.conv2d(aux, 768, aux.get_shape()[1:3], padding='VALID', scope='Conv2d_2a_5x5')
-
             aux = slim.flatten(aux)
-
-            #Layer removed
-            #aux = slim.fully_connected(aux, num_classes, activation_fn=None, scope='Logits')
-            #endpoints['AuxLogits'] = aux
+            print('AuxLogits/Conv2d_2a_5x5', aux.get_shape())
 
             # Here to end of AuxLogits scope added for SDC regression task
-            aux = slim.fully_connected(aux, 768, scope='Fc1')
+            if version <= 2:
+                aux = slim.fully_connected(aux, 768, scope='Fc1')
             aux = slim.dropout(aux, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
 
             # regression aux outputs
@@ -192,35 +190,34 @@ def build_inception_resnet_sdc_regression(
 
         net = slim.repeat(net, 9, block8, scale=0.20)
         net = block8(net, activation_fn=None)
+        print('block8', net.get_shape())
 
         net = slim.conv2d(net, 1536, 1, scope='Conv2d_7b_1x1')
         # For bayesian network
         if bayesian:
             net = slim.dropout(net, dropout_keep_prob, is_training=True, scope='Dropout')
         endpoints['Conv2d_7b_1x1'] = net
-
-        # Original logits scope completely removed
-        # with tf.variable_scope('Logits'):
-        #     endpoints['PrePool'] = net
-        #     net = slim.avg_pool2d(net, net.get_shape()[1:3], padding='VALID', scope='AvgPool_1a_8x8')
-        #     net = slim.flatten(net)
-        #
-        #     net = slim.dropout(net, dropout_keep_prob, is_training=is_training, scope='Dropout')
-        #
-        #     endpoints['PreLogitsFlatten'] = net
-        #     logits = slim.fully_connected(net, num_classes, activation_fn=None, scope='Logits')
-        #     endpoints['Logits'] = logits
-        #     endpoints['Predictions'] = tf.nn.softmax(logits, name='Predictions')
+        print('Conv2d_7b_1x1', net.get_shape())
 
         # Outputs scope is added for SDC regression task
         with tf.variable_scope('Output'):
             net = slim.avg_pool2d(net, net.get_shape()[1:3], padding='VALID', scope='AvgPool_8x8')
-            net = slim.flatten(net)
-            if version > 1:
+            print('AvgPool_8x8', net.get_shape())
+
+            if version == 3:
+                net = slim.conv2d(net, 1536, net.get_shape()[1:3], activation_fn=tf.nn.elu, scope='Fc1')
+                print('Fc1', net.get_shape())
+                net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
+                net = slim.conv2d(net, 768, 1, activation_fn=tf.nn.elu, scope='Fc2')
+                net = tf.squeeze(net)
+                print('Fc2', net.get_shape())
+            elif version == 2:
+                net = slim.flatten(net)
                 net = slim.fully_connected(net, 1536, scope='Fc1')
                 net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
                 net = slim.fully_connected(net, 768, scope='Fc2')
             else:
+                net = slim.flatten(net)
                 net = slim.fully_connected(net, 2048, scope='Fc1')
                 net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
 
