@@ -32,7 +32,15 @@ def main(_):
     processor = ProcessorSdc()
     model_params = {
         'outputs': {'steer': 1},
-        'network': 'resnet_v1_152',
+
+        #'network': 'resnet_v1_152',
+
+        #'network': 'nvidia_sdc',
+        #'regression_loss': 'mse',
+
+        'network': 'resnet_v1_50',
+        'version': 3,
+        'regression_loss': 'mse',
     }
     model = ModelSdc(params=model_params)
     exec_train.train(dataset, processor, model)

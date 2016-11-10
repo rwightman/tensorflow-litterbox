@@ -32,7 +32,18 @@ def main(_):
     processor = ProcessorSdc()
     model_params = {
         'outputs': {'steer': 1},
-        'network': 'resnet_v1_152',
+
+        #'network': 'resnet_v1_152',
+        #'version': 1,
+
+        #'network': 'nvidia_sdc',   # 160x120
+        #'version': 1,
+
+        'network': 'resnet_v1_50',  # 192x128
+        'version': 3,
+
+        #'network': 'inception_resnet_v2',  # 199x149
+        #'version': 3,
     }
     model = ModelSdc(params=model_params)
     exec_eval.evaluate(dataset, processor, model)

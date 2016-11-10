@@ -103,20 +103,22 @@ def _eval_once(feed, saver, summary_writer, eval_ops, summary_op):
             num_examples = feed.num_examples_per_epoch()
             num_iter = int(math.ceil(num_examples / feed.batch_size))
             eval_totals = [np.float64(0.0)] * len(eval_ops_list)
-            total_sample_count = num_iter * feed.batch_size
-            sample_count = 0
+            example_count = 0
             step = 0
             print('%s: starting evaluation on (%s).' % (datetime.now(), feed.dataset.subset))
             start_time = time.time()
             try:
                 while step < num_iter and not coord.should_stop():
                     eval_results = sess.run(eval_ops_list)
+                    remaining_count = num_examples - example_count
+                    example_count += min(feed.batch_size, remaining_count)
+
                     for i, result in enumerate(eval_results):
+                        if remaining_count < feed.batch_size:
+                            result = result[:remaining_count]
                         eval_totals[i] += np.sum(result, dtype=np.float64)
-                        #print(eval_names_list[i], result)
                     step += 1
-                    remaining_count = total_sample_count - sample_count
-                    sample_count += min(feed.batch_size, remaining_count)
+
                     if step % 20 == 0:
                         duration = time.time() - start_time
                         sec_per_batch = duration / 20.0
@@ -131,10 +133,10 @@ def _eval_once(feed, saver, summary_writer, eval_ops, summary_op):
             summary.ParseFromString(sess.run(summary_op))
             print('%s:' % datetime.now(), end=" ")
             for i, val in enumerate(eval_totals):
-                mean_val = val / sample_count
+                mean_val = val / example_count
                 print('%s = %.6f' % (eval_names_list[i], mean_val), end=" ")
                 summary.value.add(tag=eval_names_list[i], simple_value=mean_val)
-            print('[%d examples]' % sample_count)
+            print('[%d examples]' % example_count)
             summary_writer.add_summary(summary, global_step)
 
         except Exception as e:  # pylint: disable=broad-except
@@ -157,14 +159,14 @@ def evaluate(dataset, processor, model):
         # Get images and labels from the dataset.
         feed = Feed(dataset, processor=processor, batch_size=FLAGS.batch_size)
         eval_inputs = feed.inputs_for_eval()
-        inputs, targets, _ = feed.processor.map_inputs(eval_inputs)
+        inputs, labels, _ = feed.processor.map_inputs(eval_inputs)
 
         # Build a Graph that computes the logits predictions from the
         # inference model.
         outputs = model.build_tower(inputs)
 
         # Calculate predictions.
-        eval_ops = model.eval_ops(outputs, targets)
+        eval_ops = model.eval_ops(outputs, labels, processor=processor)
 
         # Restore the moving average version of the learned variables for eval.
         if FLAGS.moving_average_decay:

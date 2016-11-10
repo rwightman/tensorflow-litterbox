@@ -63,7 +63,7 @@ def build_nvidia_sdc(
 
 
 def nvidia_style_arg_scope(
-        weight_decay=0.0001,
+        weight_decay=0.0005,
         batch_norm_decay=0.9997,
         batch_norm_epsilon=0.001):
     """Yields the scope with the default parameters for inception_resnet_v2.

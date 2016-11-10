@@ -348,18 +348,31 @@ def resnet_v1_sdc(
                 net = conv2d_same(net, 64, 7, stride=2, scope='conv1')
                 net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1')
             net = stack_blocks_dense(net, blocks, output_stride)
+            print('blocks', net.get_shape())
+
             if global_pool:
                 # Global average pooling.
                 net = tf.reduce_mean(net, [1, 2], name='pool5', keep_dims=True)
-            #if num_classes is not None:
-            #    net = slim.conv2d(net, num_classes, [1, 1], activation_fn=None,
-            #                      normalizer_fn=None, scope='logits')
+                print('Global pool', net.get_shape())
 
             with tf.variable_scope('Output'):
-                net = slim.flatten(net)
-                net = slim.fully_connected(net, 2048, scope='Fc1')
-                net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
-                net = slim.fully_connected(net, 128, scope='Fc2')
+                if version == 1:
+                    net = slim.flatten(net)
+                    net = slim.fully_connected(net, 2048, scope='Fc1')
+                    net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
+                    net = slim.fully_connected(net, 128, scope='Fc2')
+                elif version == 2:
+                    net = slim.flatten(net)
+                    net = slim.fully_connected(net, 2048, activation_fn=tf.nn.elu, scope='Fc1')
+                    net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
+                    net = slim.fully_connected(net, 512, activation_fn=tf.nn.elu, scope='Fc2')
+                else:
+                    assert version == 3
+                    net = slim.conv2d(net, 2048, net.get_shape()[1:3], activation_fn=tf.nn.elu, scope='Fc1')
+                    print('Fc1', net.get_shape())
+                    net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
+                    net = slim.conv2d(net, 1024, 1, activation_fn=tf.nn.elu, scope='Fc2')
+                    net = tf.squeeze(net)
                 output = {}
                 if 'xyz' in output_cfg:
                     output['xyz'] = slim.fully_connected(

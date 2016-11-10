@@ -16,12 +16,13 @@ import fabric
 import tensorflow as tf
 from .build_inception_resnet_sdc import *
 from .build_resnet_sdc import *
+from .build_nvidia_sdc import *
 slim = tf.contrib.slim
 
 sdc_default_params = {
     'outputs': {'steer': 1, 'xyz': 2},
-    'network': 'inception_resnet_v2', # or one of other options in network_map
-    'regression_loss': 'mse', # or huber
+    'network': 'inception_resnet_v2',  # or one of other options in network_map
+    'regression_loss': 'mse',  # or huber
     'version': 2,
 }
 
@@ -30,6 +31,7 @@ network_map = {
     'resnet_v1_50': build_resnet_v1_50_sdc,
     'resnet_v1_101': build_resnet_v1_101_sdc,
     'resnet_v1_152': build_resnet_v1_152_sdc,
+    'nvidia_sdc': build_nvidia_sdc,
 }
 
 arg_scope_map = {
@@ -37,6 +39,7 @@ arg_scope_map = {
     'resnet_v1_50': resnet_arg_scope,
     'resnet_v1_101': resnet_arg_scope,
     'resnet_v1_152': resnet_arg_scope,
+    'nvidia_sdc': nvidia_style_arg_scope,
 }
 
 
@@ -52,11 +55,16 @@ class ModelSdc(fabric.model.Model):
                 params['network'] == 'resnet_v1_50'):
             self.network = params['network']
             self.model_variable_scope = params['network']
-        else:
-            assert params['network'] == 'inception_resnet_v2'
+        elif params['network'] == 'inception_resnet_v2':
             self.network = 'inception_resnet_v2'
             self.model_variable_scope = "InceptionResnetV2"
+        else:
+            assert params['network'] == 'nvidia_sdc'
+            self.network = 'nvidia_sdc'
+            self.model_variable_scope = "NvidiaSdc"
+
         self.version = params['version']
+
         if params['regression_loss'] == 'huber':
             self.regression_loss = fabric.loss.loss_huber_with_aux
         else:
@@ -114,8 +122,10 @@ class ModelSdc(fabric.model.Model):
                 self.regression_loss(
                     tower.outputs['steer'], target_steer, aux_predictions=aux_output_steer)
                 
-    def get_predictions(self, outputs, remove_background=False):
-        #FIXME just pass through for regression, add decoders for specific output cfgs, etc
+    def get_predictions(self, outputs, processor=None, remove_background=False):
+        if processor:
+            for k, v in outputs.items():
+                outputs[k] = processor.decode_output(v, key=k)
         return outputs
 
     def output_scopes(self):
@@ -126,44 +136,50 @@ class ModelSdc(fabric.model.Model):
         return abs_scopes
 
     @staticmethod
-    def eval_ops(predictions, targets, decoders=None):
+    def eval_ops(predictions, labels, processor=None):
         """Generate a simple (non tower based) loss op for use in evaluation.
         """
         ops = {}
         if 'steer' in predictions:
-            steer_targ = targets[0]
-            steer_pred = predictions['steer']
+            steer_label = labels[0]
+            steer_prediction = predictions['steer']
 
-            if steer_pred.get_shape()[-1].value > 1:
+            if steer_prediction.get_shape()[-1].value > 1:
                 # one hot steering loss (non reduced)
                 steer_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    steer_pred, steer_targ, name='steer_xentropy_eval')
-
-                # decode non-linear mapping before mse/pce
-                steer_pred = tf.cast(tf.argmax(steer_pred, dimension=1), tf.int32)
-                if decoders and 'steer' in decoders:
-                    steer_pred = decoders['steer'](steer_pred)
-                    steer_targ = decoders['steer'](steer_targ)
+                    steer_prediction, steer_label, name='steer_xentropy_eval')
+                # decode non-linear mapping before mse
+                steer_prediction = tf.cast(tf.argmax(steer_prediction, dimension=1), tf.int32)
+                if processor:
+                    steer_prediction = processor.decode_output(steer_prediction, key='steer')
+                    steer_label = processor.decode_output(steer_label, key='steer')
             else:
                 # linear regression steering loss
-                assert steer_pred.get_shape()[-1].value == 1
-                steer_loss = fabric.loss.metric_huber(steer_pred, steer_targ)
+                assert steer_prediction.get_shape()[-1].value == 1
+                steer_loss = fabric.loss.metric_huber(steer_prediction, steer_label)
+                if processor:
+                    steer_prediction = processor.decode_output(steer_prediction, key='steer')
+                    steer_label = processor.decode_output(steer_label, key='steer')
 
-            steer_mse = tf.squared_difference(steer_pred, steer_targ, name='steer_mse_eval')
+            steer_mse = tf.squared_difference(
+                steer_prediction, steer_label, name='steer_mse_eval')
 
             ops['steer_loss'] = steer_loss
             ops['steer_mse'] = steer_mse
-            #ops['steer_pred'] = steer_pred
-            #ops['steer_targ'] = steer_targ
+            #ops['steer_prediction'] = steer_predictions
+            #ops['steer_label'] = steer_labels
 
         if 'xyz' in predictions:
-            xyz_targ = targets[1]
-            xyz_pred = predictions['xyz']
-            xyz_loss = fabric.loss.metric_huber(xyz_pred, xyz_targ)
-            xyz_mse = tf.squared_difference(xyz_pred, xyz_targ, name='xyz_mse_eval')
+            xyz_labels = labels[1]
+            xyz_predictions = predictions['xyz']
+            if processor:
+                xyz_labels = processor.decode_output(xyz_labels, key='xyz')
+                xyz_predictions = processor.decode_output(xyz_predictions, key='xyz')
+            xyz_loss = fabric.loss.metric_huber(xyz_predictions, xyz_labels)
+            xyz_mse = tf.squared_difference(xyz_predictions, xyz_labels, name='xyz_mse_eval')
             ops['xyz_loss'] = xyz_loss
             ops['xyz_mse'] = xyz_mse
-            ops['xyz_pred'] = xyz_pred
-            ops['xyz_targ'] = xyz_targ
+            ops['xyz_prediction'] = xyz_predictions
+            ops['xyz_label'] = xyz_labels
 
         return ops

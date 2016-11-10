@@ -30,15 +30,25 @@ class Challenge2Data(DatasetFile):
             'Challenge2', subset, types=('.png',))
 
 
-
 def main(_):
     util.check_tensorflow_version()
 
     dataset = Challenge2Data(subset='')
     processor = ProcessorSdc()
     model_params = {
-        'outputs': {'steer': 1, 'xyz': 2},
+        'outputs': {'steer': 1}, #'xyz': 2},
+
         #'network': 'resnet_v1_152',
+        #'version': 1,
+
+        #'network': 'nvidia_sdc',
+        #'version': 1,
+
+        'network': 'resnet_v1_50',
+        'version': 3,
+
+        #'network': 'inception_resnet_v2',  # 199x149
+        #'version': 3,
     }
     model = ModelSdc(params=model_params)
     output, num_entries = exec_predict.predict(dataset, processor, model)
@@ -51,23 +61,24 @@ def main(_):
             steering_angles.extend(np.squeeze(o[0]['steer']))
         if 'xyz' in o[0]:
             print(o[0]['xyz'].shape)
-            print(o[0]['xyz'])
             coords.extend(np.squeeze(o[0]['xyz']))
-
-    coords = np.vstack(coords)
+    if coords:
+        coords = np.vstack(coords)
 
     # Dumps raw class probabilities to CSV file.
-    columns_ang = ['frame_id', 'steering_angle']
-    df_ang = pd.DataFrame(data={columns_ang[0]: filenames, columns_ang[1]: steering_angles}, columns=columns_ang)
-    df_ang = df_ang.head(num_entries).sort(columns='frame_id')
-    df_ang.to_csv('./output_angle.csv', index=False)
+    if steering_angles:
+        columns_ang = ['frame_id', 'steering_angle']
+        df_ang = pd.DataFrame(data={columns_ang[0]: filenames, columns_ang[1]: steering_angles}, columns=columns_ang)
+        df_ang = df_ang.head(num_entries).sort(columns='frame_id')
+        df_ang.to_csv('./output_angle.csv', index=False)
 
-    columns_loc = ['frame_id', 'longitude', 'latitude']
-    df_loc = pd.DataFrame(data={columns_loc[0]: filenames, columns_loc[1]: coords[:, 0], columns_loc[2]: coords[:, 1]}, columns=columns_loc)
-    df_loc = df_loc.head(num_entries)
-    df_loc = df_loc.sort(columns='frame_id')
-    df_loc.to_csv('./output_coords.csv', index=False)
-    df_loc.ix[:, -2:].to_csv('./output_coords_only.csv', index=False)
+    if coords:
+        columns_loc = ['frame_id', 'longitude', 'latitude']
+        df_loc = pd.DataFrame(data={columns_loc[0]: filenames, columns_loc[1]: coords[:, 0], columns_loc[2]: coords[:, 1]}, columns=columns_loc)
+        df_loc = df_loc.head(num_entries)
+        df_loc = df_loc.sort(columns='frame_id')
+        df_loc.to_csv('./output_coords.csv', index=False)
+        df_loc.ix[:, -2:].to_csv('./output_coords_only.csv', index=False)
 
 if __name__ == '__main__':
     tf.app.run()

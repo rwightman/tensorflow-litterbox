@@ -45,6 +45,18 @@ def mu_law_dec(data, input_range=2**8, output_range=2**14, mu=255):
         return tf.cast(tf.ceil(uncompanded * output_range / 2.), tf.int32)
 
 
+def mu_law_steering_enc(angle_float):
+    steering_angle_i64 = tf.cast(tf.round(angle_float / .00174533), tf.int64)
+    encoded = mu_law_enc(steering_angle_i64, input_range=9600, output_range=500, mu=127)
+    return encoded
+
+
+def mu_law_steering_dec(angle_int):
+    decoded = mu_law_dec(angle_int, input_range=500, output_range=9600, mu=127)
+    decoded = tf.cast(decoded, tf.float32) * .00174533
+    return decoded
+
+
 class ProcessorSdc(fabric.Processor):
 
     def __init__(self):
@@ -72,20 +84,19 @@ class ProcessorSdc(fabric.Processor):
         parsed = parse_proto_sdc(serialized_example)
         return parsed
 
-    def process_data(self, data, train=False, thread_id=0):
+    def process_data(self, data, mode='eval', thread_id=0):
         image, camera_id, image_timestamp, steering_angle, gps_coord = data
         processed_image = image_preprocess_sdc(
             image, camera_id,
             height=self.height, width=self.width, image_fmt=self.image_fmt,
-            train=train, thread_id=thread_id)
-        if self.standardize_labels:
+            train=mode == 'train', thread_id=thread_id)
+        if steering_angle is not None and self.standardize_labels:
             steering_angle /= STEERING_STD
+        if gps_coord is not None and self.standardize_labels:
             gps_coord = (gps_coord - GPS_MEAN) / GPS_STD
         if self.mu_law_steering:
-            # convert steering to integer encoding
-            steering_angle_i64 = tf.cast(tf.round(steering_angle / .00174533), tf.int64)
-            # mu-law encode steering int
-            steering_angle = mu_law_enc(steering_angle_i64, input_range=9600, output_range=500, mu=127)
+            mu_law_steering_enc(steering_angle)
+
         return processed_image, steering_angle, gps_coord, image_timestamp
 
     def reshape_batch(self, batch_data, batch_size, num_splits=0):
@@ -114,17 +125,13 @@ class ProcessorSdc(fabric.Processor):
             targets = [steering_angles[split_index], gps_coords[split_index]]
             return images[split_index], targets, timestamps[split_index]
 
-    def encode_label(self, key, value):
-        if key in self._label_encoders:
-            return self._label_encoders[key](value)
+    # decode model 'output' values, ie predictions or target labels
+    def decode_output(self, value, key=None):
+        if key and key == 'steer':
+            print('Decoding ', key, value)
+            return value * STEERING_STD
+        elif key and key == 'xyz':
+            print('Decoding ', key, value)
+            return value * GPS_STD + GPS_MEAN
         else:
-            print("Specified encoder key (%s) not found" % key)
-
-    def decode_label(self, key, value):
-        if key == 'steering':
-            decoded = mu_law_dec(value, input_range=500, output_range=9600, mu=127)
-            decoded = tf.cast(decoded, tf.float32) * .00174533
-        else:
-            decoded = tf.cast(value, tf.float32)
-
-        return decoded
+            return value

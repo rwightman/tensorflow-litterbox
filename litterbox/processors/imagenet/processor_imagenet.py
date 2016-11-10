@@ -25,15 +25,15 @@ class ProcessorImagenet(fabric.Processor):
         super(ProcessorImagenet, self).__init__()
 
         # For aspect based image size, short edge set to FLAGS.image_size
-        if FLAGS.image_aspect == 0.0:
+        if FLAGS.image_aspect == 0.0 or FLAGS.image_aspect == 1.0:
             self.width = FLAGS.image_size
             self.height = FLAGS.image_size
-        elif FLAGS.image_aspect > 1.0:
-            self.width = math.ceil(FLAGS.image_size * FLAGS.image_aspect)
+        elif FLAGS.image_aspect < 1.0:
+            self.width = math.floor(FLAGS.image_size * FLAGS.image_aspect)
             self.height = FLAGS.image_size
         else:
             self.width = FLAGS.image_size
-            self.height = math.ceil(FLAGS.image_size / FLAGS.image_aspect)
+            self.height = math.floor(FLAGS.image_size / FLAGS.image_aspect)
 
         self.depth = 3
         self.caffe_fmt = True if FLAGS.image_col == 'caffe' else False

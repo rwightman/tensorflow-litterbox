@@ -31,6 +31,19 @@ tf.app.flags.DEFINE_float(
     'If left as None, then moving averages are not used.')
 
 
+def truncate_batch(batch_outputs, remaining):
+    truncated_outputs = []
+    for o in batch_outputs:
+        if isinstance(o, list):
+            truncated_outputs.append([v[:remaining] for v in o])
+        elif isinstance(o, dict):
+            dict_out = {k: v[:remaining] for k, v in o.items()}
+            truncated_outputs.append(dict_out)
+        else:
+            truncated_outputs.append(o[:remaining])
+    return truncated_outputs
+
+
 def _predict(feed, saver, output_op, names_op):
     """Runs prediction
     """
@@ -72,7 +85,8 @@ def _predict(feed, saver, output_op, names_op):
                     print('%s: [%d batches out of %d] (%.1f examples/sec; %.3f sec/batch)'
                           % (datetime.now(), step, num_iter, examples_per_sec, sec_per_batch))
                     start_time = time.time()
-
+                if remaining_count < feed.batch_size:
+                    batch_outputs = truncate_batch(batch_outputs, remaining_count)
                 predictions.append(batch_outputs)
         except KeyboardInterrupt:
             pass
@@ -92,9 +106,12 @@ def predict(dataset, processor, model):
         feed = Feed(dataset, processor=processor, batch_size=FLAGS.batch_size)
         eval_inputs = feed.inputs_for_eval()
         inputs, _, identities = feed.processor.map_inputs(eval_inputs)
-        # Build a Graph that computes the logits predictions from the inference model.
+        # Build a Graph that computes the predictions from the inference model.
         outputs = model.build_tower(inputs)
-        predictions = model.get_predictions(outputs, remove_background=dataset.has_background_class)
+        predictions = model.get_predictions(
+            outputs,
+            processor=processor,
+            remove_background=dataset.has_background_class)
 
         if FLAGS.moving_average_decay:
             variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY)
