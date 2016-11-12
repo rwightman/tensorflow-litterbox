@@ -24,6 +24,7 @@ sdc_default_params = {
     'network': 'inception_resnet_v2',  # or one of other options in network_map
     'regression_loss': 'mse',  # or huber
     'version': 2,
+    'bayesian': False,
 }
 
 network_map = {
@@ -51,7 +52,7 @@ class ModelSdc(fabric.model.Model):
         self.output_cfg = params['outputs']
         # model variable scope needs to match google net for pretrained weight compat
         if (params['network'] == 'resnet_v1_152' or
-                params['network'] == 'resnet_v1-101' or
+                params['network'] == 'resnet_v1_101' or
                 params['network'] == 'resnet_v1_50'):
             self.network = params['network']
             self.model_variable_scope = params['network']
@@ -64,6 +65,7 @@ class ModelSdc(fabric.model.Model):
             self.model_variable_scope = "NvidiaSdc"
 
         self.version = params['version']
+        self.bayesian = params['bayesian']
 
         if params['regression_loss'] == 'huber':
             self.regression_loss = fabric.loss.loss_huber_with_aux
@@ -77,6 +79,7 @@ class ModelSdc(fabric.model.Model):
                 inputs,
                 output_cfg=self.output_cfg,
                 version=self.version,
+                bayesian=self.bayesian,
                 is_training=is_training)
 
         aux_output = None

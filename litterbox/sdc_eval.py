@@ -37,7 +37,10 @@ def main(_):
         #'version': 1,
 
         #'network': 'nvidia_sdc',   # 160x120
-        #'version': 1,
+        #'version': 2,
+
+        #'network': 'resnet_v1_101',  # 192x128
+        #'version': 3,
 
         'network': 'resnet_v1_50',  # 192x128
         'version': 3,

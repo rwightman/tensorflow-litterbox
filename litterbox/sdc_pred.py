@@ -46,6 +46,7 @@ def main(_):
 
         'network': 'resnet_v1_50',
         'version': 3,
+        'bayesian': False,
 
         #'network': 'inception_resnet_v2',  # 199x149
         #'version': 3,
@@ -58,9 +59,8 @@ def main(_):
     for o in output:
         filenames.extend([int(os.path.splitext(os.path.basename(f))[0]) for f in o[1]])
         if 'steer' in o[0]:
-            steering_angles.extend(np.squeeze(o[0]['steer']))
+            steering_angles.extend(np.squeeze(o[0]['steer'], axis=1))
         if 'xyz' in o[0]:
-            print(o[0]['xyz'].shape)
             coords.extend(np.squeeze(o[0]['xyz']))
     if coords:
         coords = np.vstack(coords)

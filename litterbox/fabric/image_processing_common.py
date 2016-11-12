@@ -304,7 +304,7 @@ def process_for_train(image, height, width, bbox=None, params=distort_params_def
         return distorted_image
 
 eval_params_default = {
-    'central_crop_fraction': 0.90,
+    'central_crop_fraction': 0.95,
 }
 
 

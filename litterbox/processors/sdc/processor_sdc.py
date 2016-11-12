@@ -85,19 +85,23 @@ class ProcessorSdc(fabric.Processor):
         return parsed
 
     def process_data(self, data, mode='eval', thread_id=0):
-        image, camera_id, image_timestamp, steering_angle, gps_coord = data
+        train = (mode == 'train')
+        image, camera_id, image_timestamp = data[:3]
         processed_image = image_preprocess_sdc(
             image, camera_id,
             height=self.height, width=self.width, image_fmt=self.image_fmt,
-            train=mode == 'train', thread_id=thread_id)
-        if steering_angle is not None and self.standardize_labels:
-            steering_angle /= STEERING_STD
-        if gps_coord is not None and self.standardize_labels:
-            gps_coord = (gps_coord - GPS_MEAN) / GPS_STD
-        if self.mu_law_steering:
-            mu_law_steering_enc(steering_angle)
-
-        return processed_image, steering_angle, gps_coord, image_timestamp
+            train=train, thread_id=thread_id)
+        if mode != 'pred':
+            steering_angle, gps_coord = data[-2:]
+            if steering_angle is not None and self.standardize_labels:
+                steering_angle /= STEERING_STD
+            if gps_coord is not None and self.standardize_labels:
+                gps_coord = (gps_coord - GPS_MEAN) / GPS_STD
+            if self.mu_law_steering:
+                mu_law_steering_enc(steering_angle)
+            return processed_image, steering_angle, gps_coord, image_timestamp
+        else:
+            return processed_image, tf.zeros((1,)), tf.zeros((2,)), image_timestamp
 
     def reshape_batch(self, batch_data, batch_size, num_splits=0):
         images, steering_angles, gps_coords, timestamps = batch_data

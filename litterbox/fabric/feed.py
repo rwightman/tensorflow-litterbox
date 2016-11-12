@@ -61,7 +61,9 @@ tf.app.flags.DEFINE_integer('input_queue_memory_factor', 8,
 
 class Feed(object):
 
-    def __init__(self, dataset, processor, batch_size=None, num_preprocess_threads=None, num_readers=None):
+    def __init__(
+            self, dataset, processor, batch_size=None, sample=0,
+            num_preprocess_threads=None, num_readers=None):
 
         self.dataset = dataset
         if not dataset:
@@ -72,6 +74,8 @@ class Feed(object):
             raise ValueError('Please provide a data preprocessor')
 
         self.batch_size = FLAGS.batch_size if not batch_size else batch_size
+
+        self.sample = sample
 
         self.num_preprocess_threads = FLAGS.num_preprocess_threads \
             if not num_preprocess_threads else num_preprocess_threads
@@ -142,9 +146,9 @@ class Feed(object):
             batch_queue_capacity = 2 * self.num_preprocess_threads * self.batch_size
             batch_data = tf.train.batch_join(
                 inputs,
+                enqueue_many=self.sample > 0,
                 batch_size=self.batch_size,
                 capacity=batch_queue_capacity)
-                #allow_smaller_final_batch=(not train))
 
             return self.processor.reshape_batch(batch_data, self.batch_size, num_splits)
 
@@ -207,6 +211,8 @@ class Feed(object):
             # Parse a serialized Example proto to extract the image and metadata.
             parsed = self.processor.parse_example(example_serialized)
             processed = self.processor.process_data(parsed, mode=mode, thread_id=thread_id)
+            if self.sample > 0:
+                processed = [tf.gather(tf.expand_dims(x, 0), [0] * self.sample) for x in processed]
             inputs.append(list(processed))
 
         return inputs
@@ -264,14 +270,14 @@ class Feed(object):
             input_buffer = prefetch_head[1]
             label_index = prefetch_head[2]
 
-            #FIXME super hack hack hack, need to fix this so we can have processing pipeline that
-            #doesn't bother with targets for inference and a file pipeline that can actually handle
-            #targets
-            dummy_float = tf.cast(label_index, dtype=tf.float32)
-            dummy_float2 = tf.pack([dummy_float, dummy_float])
-            data_packed = [input_buffer, label_index, filename, dummy_float, dummy_float2]
+            #FIXME hack, need to fix this so we can have processing pipeline that doesn't need
+            #to handle labels for inference and a file pipeline that can actually training with
+            #non-integer index labels
 
-            processed = self.processor.process_data(data_packed, thread_id=thread_id)
+            data_packed = [input_buffer, label_index, filename]
+            processed = self.processor.process_data(data_packed, mode=mode, thread_id=thread_id)
+            if self.sample > 0:
+                processed = [tf.gather(tf.expand_dims(x, 0), [0] * self.sample) for x in processed]
             inputs.append(list(processed))
 
         return inputs

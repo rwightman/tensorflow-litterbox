@@ -368,10 +368,12 @@ def resnet_v1_sdc(
                     net = slim.fully_connected(net, 512, activation_fn=tf.nn.elu, scope='Fc2')
                 else:
                     assert version == 3
-                    net = slim.conv2d(net, 2048, net.get_shape()[1:3], activation_fn=tf.nn.elu, scope='Fc1')
+                    net = slim.conv2d(
+                        net, 2048, net.get_shape()[1:3], padding='VALID', activation_fn=tf.nn.elu, scope='Fc1')
                     print('Fc1', net.get_shape())
                     net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
                     net = slim.conv2d(net, 1024, 1, activation_fn=tf.nn.elu, scope='Fc2')
+                    print('Fc2', net.get_shape())
                     net = tf.squeeze(net)
                 output = {}
                 if 'xyz' in output_cfg:
@@ -394,6 +396,7 @@ def build_resnet_v1_50_sdc(
         output_cfg={},
         version=1,
         is_training=True,
+        bayesian=False,
         global_pool=True,
         output_stride=None,
         reuse=None,
@@ -412,7 +415,7 @@ def build_resnet_v1_50_sdc(
     ]
     return resnet_v1_sdc(
         inputs, blocks, output_cfg, version=version, is_training=is_training,
-        global_pool=global_pool, output_stride=output_stride,
+        bayesian=bayesian, global_pool=global_pool, output_stride=output_stride,
         include_root_block=True, reuse=reuse, scope=scope)
 
 
@@ -421,6 +424,7 @@ def build_resnet_v1_101_sdc(
         output_cfg={},
         version=1,
         is_training=True,
+        bayesian=False,
         global_pool=True,
         output_stride=None,
         reuse=None,
@@ -439,7 +443,7 @@ def build_resnet_v1_101_sdc(
     ]
     return resnet_v1_sdc(
         inputs, blocks, output_cfg, version=version, is_training=is_training,
-        global_pool=global_pool, output_stride=output_stride,
+        bayesian=bayesian, global_pool=global_pool, output_stride=output_stride,
         include_root_block=True, reuse=reuse, scope=scope)
 
 
@@ -448,6 +452,7 @@ def build_resnet_v1_152_sdc(
         output_cfg={},
         version=1,
         is_training=True,
+        bayesian=False,
         global_pool=True,
         output_stride=None,
         reuse=None,
@@ -466,5 +471,5 @@ def build_resnet_v1_152_sdc(
     ]
     return resnet_v1_sdc(
         inputs, blocks, output_cfg, version=version, is_training=is_training,
-        global_pool=global_pool, output_stride=output_stride,
+        bayesian=bayesian, global_pool=global_pool, output_stride=output_stride,
         include_root_block=True, reuse=reuse, scope=scope)
