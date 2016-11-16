@@ -15,9 +15,10 @@ from __future__ import print_function
 import tensorflow as tf
 from fabric import util
 from fabric import exec_eval
-from sdc_data import SdcData
+from fabric import DatasetRecord
 from models import ModelSdc
 from processors import ProcessorSdc
+from feeds import FeedImagesWithLabels
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -25,11 +26,31 @@ tf.app.flags.DEFINE_string('subset', 'validation',
                            """Either 'validation', 'train', 'test'""")
 
 
+class SdcData(DatasetRecord):
+    """StateFarm data set."""
+
+    def __init__(self):
+        super(SdcData, self).__init__('sdc', FLAGS.subset)
+
+    def num_classes(self):
+        return 0
+
+    def num_examples_per_epoch(self):
+        """Returns the number of examples in the data subset."""
+        if self.subset == 'train':
+            return 431627 #319814 #124200  #964809
+        elif self.subset == 'validation':
+            return 16709 #43134  #57557 # 39000
+
+
 def main(_):
     util.check_tensorflow_version()
 
-    dataset = SdcData(subset=FLAGS.subset)
     processor = ProcessorSdc()
+    #processor.mu_law_steering = True
+    #processor.standardize_labels = False
+    feed = FeedImagesWithLabels(dataset=SdcData(), processor=processor)
+
     model_params = {
         'outputs': {'steer': 1},
 
@@ -49,7 +70,8 @@ def main(_):
         #'version': 3,
     }
     model = ModelSdc(params=model_params)
-    exec_eval.evaluate(dataset, processor, model)
+
+    exec_eval.evaluate(feed, model)
 
 if __name__ == '__main__':
     tf.app.run()

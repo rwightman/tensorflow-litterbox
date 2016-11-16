@@ -30,9 +30,6 @@ tf.app.flags.DEFINE_float(
     'The decay to use for the moving average.'
     'If left as None, then moving averages are not used.')
 
-tf.app.flags.DEFINE_integer(
-    'sample', 0, '')
-
 
 def truncate_batch(batch_outputs, remaining):
     truncated_outputs = []
@@ -106,7 +103,7 @@ def _predict(feed, saver, output_op, names_op):
 
 def _reduce_vals(values, factor):
     v_split = tf.split(0, values.get_shape()[0] // factor, values)
-    v_mean = [tf.reduce_mean(x, keep_dims=True) for x in v_split]
+    v_mean = [tf.reduce_mean(x, reduction_indices=[0], keep_dims=True) for x in v_split]
     return tf.concat(0, v_mean)
 
 
@@ -122,25 +119,19 @@ def _reduce_batch(outputs, identities, batch_size, f=8):
     return outputs, tf.gather(identities, idx)
 
 
-def predict(dataset, processor, model):
+def predict(feed, model):
     """Predict/infer outputs for dataset using model."""
     with tf.Graph().as_default():
         # Get images and labels from the dataset.
-        sample = FLAGS.sample
-        feed = Feed(
-            dataset, processor=processor, batch_size=FLAGS.batch_size, sample=sample)
-        eval_inputs = feed.inputs_for_predict()
-        inputs, _, identities = feed.processor.map_inputs(eval_inputs)
+        inputs, identities = feed.inputs_for_predict()
+
         # Build a Graph that computes the predictions from the inference model.
         outputs = model.build_tower(inputs)
-        predictions = model.get_predictions(
-            outputs,
-            processor=processor,
-            remove_background=dataset.has_background_class)
+        predictions = model.get_predictions(outputs, processor=feed.processor)
 
-        if sample:
+        if feed.sample:
             predictions, identities = _reduce_batch(
-                predictions, identities, FLAGS.batch_size, f=sample)
+                predictions, identities, feed.batch_size, f=feed.sample)
 
         if FLAGS.moving_average_decay:
             variable_averages = tf.train.ExponentialMovingAverage(model.MOVING_AVERAGE_DECAY)

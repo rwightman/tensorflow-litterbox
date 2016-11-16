@@ -92,4 +92,4 @@ def parse_proto_imagenet(example_serialized):
     bbox = tf.expand_dims(bbox, 0)
     bbox = tf.transpose(bbox, [0, 2, 1])
 
-    return features['image/encoded'], label, bbox, features['image/class/text'], features['image/filename']
+    return features['image/encoded'], bbox, features['image/filename'], features['image/class/text'], label

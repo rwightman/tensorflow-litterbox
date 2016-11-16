@@ -125,7 +125,7 @@ class ModelSdc(fabric.model.Model):
                 self.regression_loss(
                     tower.outputs['steer'], target_steer, aux_predictions=aux_output_steer)
                 
-    def get_predictions(self, outputs, processor=None, remove_background=False):
+    def get_predictions(self, outputs, processor=None):
         if processor:
             for k, v in outputs.items():
                 outputs[k] = processor.decode_output(v, key=k)
@@ -169,8 +169,8 @@ class ModelSdc(fabric.model.Model):
 
             ops['steer_loss'] = steer_loss
             ops['steer_mse'] = steer_mse
-            #ops['steer_prediction'] = steer_predictions
-            #ops['steer_label'] = steer_labels
+            #ops['steer_prediction'] = steer_prediction
+            #ops['steer_label'] = steer_label
 
         if 'xyz' in predictions:
             xyz_labels = labels[1]

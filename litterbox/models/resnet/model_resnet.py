@@ -121,9 +121,9 @@ class ModelResnet(fabric.Model):
         tower = self.tower(scope)
         fabric.loss.loss_softmax_cross_entropy(tower.outputs, labels)
 
-    def get_predictions(self, outputs, remove_background=False):
-        if remove_background:
-            outputs = tf.slice(outputs, [0, 1], [-1, -1])
+    def get_predictions(self, outputs, processor):
+        #if remove_background:
+        #    outputs = tf.slice(outputs, [0, 1], [-1, -1])
         return tf.nn.softmax(outputs)
 
     def output_scopes(self):

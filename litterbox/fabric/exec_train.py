@@ -36,6 +36,7 @@ import numpy as np
 import tensorflow as tf
 
 from .feed import Feed
+from .processor import select_split
 from .opt_param_scheduler import OptParamScheduler
 
 FLAGS = tf.app.flags.FLAGS
@@ -73,7 +74,7 @@ tf.app.flags.DEFINE_float(
     'If left as None, then moving averages are not used.')
 
 
-def _add_tower_loss(inputs, targets, model, scope):
+def _add_tower_loss(inputs, labels, model, scope):
     """Calculate the total loss on a single tower running the ImageNet model.
 
     We perform 'batch splitting'. This means that we cut up a batch across
@@ -96,7 +97,7 @@ def _add_tower_loss(inputs, targets, model, scope):
 
     # Build the portion of the Graph calculating the losses. Note that we will
     # assemble the total_loss using a custom function below.
-    model.add_tower_loss(targets)
+    model.add_tower_loss(labels)
 
     # Assemble all of the losses for the current tower only.
     tower_losses = tf.contrib.losses.get_losses(scope)
@@ -178,14 +179,15 @@ def _build_train_graph(feed, model):
     assert FLAGS.batch_size % FLAGS.num_gpus == 0, 'Batch size must be divisible by number of GPUs'
     num_gpus = FLAGS.num_gpus
 
-    train_inputs = feed.inputs_for_train(num_splits=num_gpus)
+    train_examples = feed.inputs_for_train(num_splits=num_gpus)
+    print(train_examples)
 
     input_summaries = copy.copy(tf.get_collection(tf.GraphKeys.SUMMARIES))
 
     # Calculate the gradients for each model tower.
     tower_grads = []
     for i in range(num_gpus):
-        inputs, targets, _ = feed.processor.map_inputs(train_inputs, i)
+        inputs, labels = select_split(train_examples, i)
         with tf.device('/gpu:%d' % i):
             with tf.name_scope(model.scope_name(i)) as scope:
                 # Force all Variables to reside on the CPU.
@@ -194,12 +196,12 @@ def _build_train_graph(feed, model):
                         # Calculate the loss for one tower of the ImageNet model. This
                         # function constructs the entire ImageNet model but shares the
                         # variables across all towers.
-                        tower_losses = _add_tower_loss(inputs, targets, model, scope)
+                        tower_losses = _add_tower_loss(inputs, labels, model, scope)
 
                     # Reuse variables for the next tower.
                     tf.get_variable_scope().reuse_variables()
                 else:
-                    tower_losses = _add_tower_loss(inputs, targets, model, scope)
+                    tower_losses = _add_tower_loss(inputs, labels, model, scope)
 
                 # Calculate the gradients for the batch of data on this ImageNet tower.
                 grads = opt.compute_gradients(tower_losses[0])
@@ -267,23 +269,14 @@ def _build_train_graph(feed, model):
     return train_op, init_op, summary_op, tower_losses
 
 
-def train(dataset, processor, model):
+def train(feed, model):
 
-    assert dataset.data_files()
     if not tf.gfile.Exists(FLAGS.train_dir):
         tf.gfile.MakeDirs(FLAGS.train_dir)
     tf.gfile.DeleteRecursively(FLAGS.train_dir)
 
     """Train on dataset for a number of steps."""
     with tf.Graph().as_default(), tf.device('/cpu:0'):
-        # Override the number of preprocessing threads to account for the increased
-        # number of GPU towers.
-        num_preprocess_threads = FLAGS.num_preprocess_threads * FLAGS.num_gpus
-        feed = Feed(
-            dataset,
-            processor,
-            batch_size=FLAGS.batch_size,
-            num_preprocess_threads=num_preprocess_threads)
 
         train_op, init_op, summary_op, tower_losses = _build_train_graph(feed, model)
 
@@ -331,7 +324,7 @@ def train(dataset, processor, model):
 
             if step % 10 == 0:
                 examples_per_sec = FLAGS.batch_size / float(duration)
-                epoch = 1 + (step * FLAGS.batch_size) // dataset.num_examples_per_epoch() 
+                epoch = 1 + (step * FLAGS.batch_size) // feed.num_examples_per_epoch()
                 format_str = '%s: step %d, epoch %d, loss = %.2f total; ' \
                              '%.4f output (%.1f examples/sec; %.3f sec/batch)'
                 print(format_str % (datetime.now(), step, epoch, total_loss_value,

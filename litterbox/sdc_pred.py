@@ -18,6 +18,7 @@ import pandas as pd
 import os
 from fabric import util, exec_predict
 from fabric.dataset_file import DatasetFile
+from feeds import FeedImagesWithLabels
 from models import ModelSdc
 from processors import ProcessorSdc
 
@@ -33,8 +34,11 @@ class Challenge2Data(DatasetFile):
 def main(_):
     util.check_tensorflow_version()
 
-    dataset = Challenge2Data(subset='')
     processor = ProcessorSdc()
+    feed = FeedImagesWithLabels(
+        dataset=Challenge2Data(subset=''),
+        processor=processor)
+
     model_params = {
         'outputs': {'steer': 1}, #'xyz': 2},
 
@@ -52,7 +56,9 @@ def main(_):
         #'version': 3,
     }
     model = ModelSdc(params=model_params)
-    output, num_entries = exec_predict.predict(dataset, processor, model)
+
+    output, num_entries = exec_predict.predict(feed, model)
+
     filenames = []
     steering_angles = []
     coords = []
@@ -61,7 +67,7 @@ def main(_):
         if 'steer' in o[0]:
             steering_angles.extend(np.squeeze(o[0]['steer'], axis=1))
         if 'xyz' in o[0]:
-            coords.extend(np.squeeze(o[0]['xyz']))
+            coords.extend(o[0]['xyz'])
     if coords:
         coords = np.vstack(coords)
 
@@ -69,14 +75,16 @@ def main(_):
     if steering_angles:
         columns_ang = ['frame_id', 'steering_angle']
         df_ang = pd.DataFrame(data={columns_ang[0]: filenames, columns_ang[1]: steering_angles}, columns=columns_ang)
-        df_ang = df_ang.head(num_entries).sort(columns='frame_id')
+        df_ang = df_ang.head(num_entries).sort_values(by='frame_id')
         df_ang.to_csv('./output_angle.csv', index=False)
 
-    if coords:
+    if coords and coords.shape[0]:
         columns_loc = ['frame_id', 'longitude', 'latitude']
-        df_loc = pd.DataFrame(data={columns_loc[0]: filenames, columns_loc[1]: coords[:, 0], columns_loc[2]: coords[:, 1]}, columns=columns_loc)
+        df_loc = pd.DataFrame(
+            data={columns_loc[0]: filenames, columns_loc[1]: coords[:, 0], columns_loc[2]: coords[:, 1]},
+            columns=columns_loc)
         df_loc = df_loc.head(num_entries)
-        df_loc = df_loc.sort(columns='frame_id')
+        df_loc = df_loc.sort_values(by='frame_id')
         df_loc.to_csv('./output_coords.csv', index=False)
         df_loc.ix[:, -2:].to_csv('./output_coords_only.csv', index=False)
 

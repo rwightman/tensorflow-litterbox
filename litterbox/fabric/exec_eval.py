@@ -146,27 +146,24 @@ def _eval_once(feed, saver, summary_writer, eval_ops, summary_op):
         coord.join(threads, stop_grace_period_secs=10)
 
 
-def evaluate(dataset, processor, model):
+def evaluate(feed, model):
     """Evaluate model on Dataset for a number of steps."""
 
-    assert dataset.data_files()
     if tf.gfile.Exists(FLAGS.eval_dir):
         tf.gfile.DeleteRecursively(FLAGS.eval_dir)
     tf.gfile.MakeDirs(FLAGS.eval_dir)
 
     with tf.Graph().as_default():
 
-        # Get images and labels from the dataset.
-        feed = Feed(dataset, processor=processor, batch_size=FLAGS.batch_size)
-        eval_inputs = feed.inputs_for_eval()
-        inputs, labels, _ = feed.processor.map_inputs(eval_inputs)
+        # Get images and labels examples
+        inputs, labels = feed.inputs_for_eval()
 
         # Build a Graph that computes the logits predictions from the
         # inference model.
         outputs = model.build_tower(inputs)
 
         # Calculate predictions.
-        eval_ops = model.eval_ops(outputs, labels, processor=processor)
+        eval_ops = model.eval_ops(outputs, labels, processor=feed.processor)
 
         # Restore the moving average version of the learned variables for eval.
         if FLAGS.moving_average_decay:

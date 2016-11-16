@@ -366,22 +366,27 @@ def resnet_v1_sdc(
                     net = slim.fully_connected(net, 2048, activation_fn=tf.nn.elu, scope='Fc1')
                     net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
                     net = slim.fully_connected(net, 512, activation_fn=tf.nn.elu, scope='Fc2')
-                else:
-                    assert version == 3
-                    net = slim.conv2d(
-                        net, 2048, net.get_shape()[1:3], padding='VALID', activation_fn=tf.nn.elu, scope='Fc1')
-                    print('Fc1', net.get_shape())
-                    net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
-                    net = slim.conv2d(net, 1024, 1, activation_fn=tf.nn.elu, scope='Fc2')
-                    print('Fc2', net.get_shape())
-                    net = tf.squeeze(net)
+                elif version == 3 or version == 4:
+                    do_dropout = bayesian or is_training
+                    out_scope = slim.arg_scope([slim.conv2d], activation_fn=tf.nn.elu) if version == 3 else \
+                        slim.arg_scope([slim.conv2d], activation_fn=tf.nn.elu, normalizer_fn=None)
+                    with out_scope:
+                        net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
+                        print('Fc1', net.get_shape())
+                        net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout')
+                        net = slim.conv2d(net, 1024, 1, scope='Fc2')
+                        print('Fc2', net.get_shape())
+                        net = tf.squeeze(net)
+
                 output = {}
                 if 'xyz' in output_cfg:
                     output['xyz'] = slim.fully_connected(
                         net, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
                 if 'steer' in output_cfg:
                     output['steer'] = slim.fully_connected(
-                        net, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
+                        net, output_cfg['steer'],
+                        activation_fn=tf.nn.tanh if version == 4 else None,
+                        scope='OutputSteer')
 
             endpoints = slim.utils.convert_collection_to_dict(endpoints_collection)
 

@@ -40,32 +40,27 @@ class ProcessorImagenet(fabric.Processor):
 
     def parse_example(self, serialized_example):
         parsed = parse_proto_imagenet(serialized_example)
-        # image_buffer, label_index, bbox, _, name
+        # image_buffer, bbox, file name, class name, class label
         return parsed
 
-    def process_data(self, data, train=False, thread_id=0):
-        image_buffer, label_index, bbox, _, name = data
+    def process_example(self, data, mode='eval', thread_id=0):
+        train = (mode == 'train')
+        image_buffer, bbox, name, _, label_index = data
         image_processed = image_preprocess_imagenet(
-            image_buffer, height=self.height, width=self.width, train=train, thread_id=thread_id)
-        return image_processed, label_index, name
+            image_buffer, height=self.height, width=self.width,
+            bbox=bbox, train=train, thread_id=thread_id)
+        return image_processed, name, label_index
 
     def reshape_batch(self, batch_data, batch_size, num_splits=0):
-        images, labels, names = batch_data
+        images, names, labels = batch_data
         images = tf.cast(images, tf.float32)
         images = tf.reshape(images, shape=[batch_size, self.height, self.width, self.depth])
-        labels = tf.reshape(labels, [batch_size])
         names = tf.reshape(names, [batch_size])
+        labels = tf.reshape(labels, [batch_size])
 
         if num_splits > 0:
             images = tf.split(0, num_splits, images)
-            labels = tf.split(0, num_splits, labels)
             names = tf.split(0, num_splits, names)
+            labels = tf.split(0, num_splits, labels)
 
-        return images, labels, names
-
-    def map_inputs(self, tensor_list, split_index=None):
-        images, labels, names = tensor_list
-        if split_index is None:
-            return images, labels, names
-        else:
-            return images[split_index], labels[split_index], names[split_index]
+        return images, names, labels
