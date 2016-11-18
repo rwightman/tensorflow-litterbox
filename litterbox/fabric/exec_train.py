@@ -269,6 +269,20 @@ def _build_train_graph(feed, model):
     return train_op, init_op, summary_op, tower_losses
 
 
+def restore_pretrained_variables(sess, model, model_path, restore_outputs=True):
+    assert tf.gfile.Exists(model_path)
+    checkpoint_variable_set = set()
+    if tf.gfile.IsDirectory(model_path):
+        model_path = tf.train.latest_checkpoint(model_path)
+    else:
+        model_path = model_path
+        reader = tf.train.NewCheckpointReader(model_path)
+        checkpoint_variable_set = set(reader.get_variable_to_shape_map().keys())
+    variables_to_restore = model.variables_to_restore(restore_outputs, checkpoint_variable_set)
+    tf.train.Saver(variables_to_restore).restore(sess, model_path)
+    print('%s: Pre-trained model restored from %s' % (datetime.now(), model_path))
+
+
 def train(feed, model):
 
     if not tf.gfile.Exists(FLAGS.train_dir):
@@ -294,21 +308,11 @@ def train(feed, model):
 
         sess.run(init_op)
 
-        # When fine-tuning a model, we do not restore the logits but instead we
-        # randomly initialize the logits. The number of classes in the output of the
-        # logit is the number of classes in specified Dataset.
-        restore_outputs = not FLAGS.fine_tune
-
+        # When fine-tuning a model, we do not restore the outputs but instead we
+        # randomly initialize them.
         if FLAGS.pretrained_model_path:
-            assert tf.gfile.Exists(FLAGS.pretrained_model_path)
-            variables_to_restore = model.variables_to_restore(restore_outputs)
-            if tf.gfile.IsDirectory(FLAGS.pretrained_model_path):
-                model_path = tf.train.latest_checkpoint(FLAGS.pretrained_model_path)
-            else:
-                model_path = FLAGS.pretrained_model_path
-            tf.train.Saver(variables_to_restore).restore(sess, model_path)
-            print('%s: Pre-trained model restored from %s' %
-                  (datetime.now(), FLAGS.pretrained_model_path))
+            restore_pretrained_variables(
+                sess, model, model_path=FLAGS.pretrained_model_path, restore_outputs=not FLAGS.fine_tune)
 
         # Start the queue runners.
         tf.train.start_queue_runners(sess=sess)
