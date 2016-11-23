@@ -33,7 +33,7 @@ def build_nvidia_sdc(
         net = slim.conv2d(net, 48, 5, stride=2, scope='Conv3_5x5')
         endpoints['Conv3_5x5'] = net
         print(net.get_shape())
-        net = slim.conv2d(net, 64, 3, scope='Conv4_3x3')
+        net = slim.conv2d(net, 64, 3, stride=2, scope='Conv4_3x3')
         endpoints['Conv4_3x3'] = net
         print(net.get_shape())
         net = slim.conv2d(net, 64, 3, scope='Conv5_3x3')
@@ -41,22 +41,33 @@ def build_nvidia_sdc(
         print(net.get_shape())
 
         with tf.variable_scope('Output'):
-            net = slim.conv2d(net, 1152, net.get_shape()[1:3], scope='Fc1')
-            net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
-            print(net.get_shape())
-            net = slim.conv2d(net, 144, 1, scope='Fc2')
-            net = slim.dropout(net, dropout_keep_prob, scope='Dropout2')
-            print(net.get_shape())
-            net = slim.conv2d(net, 72, 1, scope='Fc3')
-            print(net.get_shape())
-            net = slim.flatten(net)
-            output = {}
-            if 'xyz' in output_cfg:
-                output['xyz'] = slim.fully_connected(
-                    net, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
-            if 'steer' in output_cfg:
-                output['steer'] = slim.fully_connected(
-                    net, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
+            if version == 1:
+                net = slim.conv2d(net, 1152, net.get_shape()[1:3], scope='Fc1')
+                net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
+                print(net.get_shape())
+                net = slim.conv2d(net, 144, 1, scope='Fc2')
+                net = slim.dropout(net, dropout_keep_prob, scope='Dropout2')
+                print(net.get_shape())
+                net = slim.conv2d(net, 72, 1, scope='Fc3')
+                print(net.get_shape())
+                net = tf.squeeze(net)
+            else:
+                net = slim.conv2d(net, 1280, net.get_shape()[1:3], scope='Fc1')
+                net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
+                print(net.get_shape())
+                net = slim.conv2d(net, 100, 1, scope='Fc2')
+                net = slim.dropout(net, dropout_keep_prob, scope='Dropout2')
+                print(net.get_shape())
+                net = slim.conv2d(net, 50, 1, scope='Fc3')
+                print(net.get_shape())
+                net = slim.conv2d(net, 10, 1, scope='Fc4')
+                print(net.get_shape())
+                net = tf.squeeze(net)
+
+            assert 'steer' in output_cfg
+            output = {'steer': slim.fully_connected(
+                net, output_cfg['steer'], activation_fn=None, scope='OutputSteer')
+            }
             endpoints['Output'] = output
 
     return output, endpoints
