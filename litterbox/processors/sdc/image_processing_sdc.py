@@ -31,8 +31,10 @@ import numpy as np
 from copy import deepcopy
 from fabric.image_processing_common import *
 
-SDC_MEAN = [0.2087998337, 0.240992306, 0.284853019]
-SDC_STD = [0.2160449662, 0.2489588968, 0.2898496487]
+#SDC_MEAN = [0.2087998337, 0.240992306, 0.284853019]
+#SDC_STD = [0.2160449662, 0.2489588968, 0.2898496487]
+SDC_MEAN = [0.2956688423, 0.3152727451, 0.3687327858]
+SDC_STD = [0.2538597152, 0.2642534638, 0.277498978]
 
 distort_params_sdc = {
     'h_flip': False,
@@ -40,8 +42,8 @@ distort_params_sdc = {
     'elastic_distortion': False,
     'affine_distortion': False,
     'aspect_ratio_range': [0.909, 1.1],
-    'area_range': [0.8, 1.0],
-    'min_object_covered': 0.875,
+    'area_range': [0.75, 1.0],
+    'min_object_covered': 0.825,
     'hue_delta': 0.1,
 }
 
