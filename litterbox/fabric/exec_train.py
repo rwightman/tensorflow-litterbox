@@ -180,7 +180,6 @@ def _build_train_graph(feed, model):
     num_gpus = FLAGS.num_gpus
 
     train_examples = feed.inputs_for_train(num_splits=num_gpus)
-    print(train_examples)
 
     input_summaries = copy.copy(tf.get_collection(tf.GraphKeys.SUMMARIES))
 

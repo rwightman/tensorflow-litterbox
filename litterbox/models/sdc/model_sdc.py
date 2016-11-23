@@ -25,6 +25,7 @@ sdc_default_params = {
     'regression_loss': 'mse',  # or huber
     'version': 2,
     'bayesian': False,
+    'lock_root': False,
 }
 
 network_map = {
@@ -49,6 +50,8 @@ class ModelSdc(fabric.model.Model):
     def __init__(self, params={}):
         super(ModelSdc, self).__init__()
         params = fabric.model.merge_params(sdc_default_params, params)
+        print("ModelSdc params", params)
+
         self.output_cfg = params['outputs']
         # model variable scope needs to match google net for pretrained weight compat
         if (params['network'] == 'resnet_v1_152' or
@@ -66,6 +69,7 @@ class ModelSdc(fabric.model.Model):
 
         self.version = params['version']
         self.bayesian = params['bayesian']
+        self.lock_root = params['lock_root']
 
         if params['regression_loss'] == 'huber':
             self.regression_loss = fabric.loss.loss_huber_with_aux
@@ -80,6 +84,7 @@ class ModelSdc(fabric.model.Model):
                 output_cfg=self.output_cfg,
                 version=self.version,
                 bayesian=self.bayesian,
+                lock_root=self.lock_root,
                 is_training=is_training)
 
         aux_output = None
