@@ -78,16 +78,47 @@ class Model(object):
     def get_variable_fns(self):
         return [tf.contrib.framework.variable]
 
+    # Hook to let the model make variable name remapping decisions, especially helpful for
+    # handling old or pretrained checkpoints that don't match all current variable names
+    def _remap_variable_names(self, variables, restore_outputs, checkpoint_variable_set):
+        return variables
+
     # Return a list of model variables to restore for a Saver
-    def variables_to_restore(self, restore_outputs=True):
-        model_variables = tf.contrib.framework.variables.get_model_variables()
-        if restore_outputs:
-            return model_variables
-        else:
-            model_variable_names = [x.name for x in model_variables]
+    def variables_to_restore(self, restore_outputs=True, checkpoint_variable_set=set()):
+        restore_variables = tf.contrib.framework.variables.get_model_variables()
+        if not restore_outputs:
+            # Filter out variables in model output scopes by name if the outputs are not being restored
+            model_variable_names = [x.op.name for x in restore_variables]
             filtered_variables = tf.contrib.framework.variables.get_variables_to_restore(
-                model_variable_names, self.output_scopes())
-            return filtered_variables
+                model_variable_names,
+                self.output_scopes())
+            restore_variables = filtered_variables
+
+        restore_variables = self._remap_variable_names(
+            restore_variables, restore_outputs, checkpoint_variable_set)
+
+        if checkpoint_variable_set:
+            matched = {}
+            missing = []
+            if isinstance(restore_variables, dict):
+                for name, var in restore_variables.items():
+                    if name in checkpoint_variable_set:
+                        matched[name] = var
+                    else:
+                        missing += [name]
+            else:
+                for var in restore_variables:
+                    if var.op.name in checkpoint_variable_set:
+                        matched[var.op.name] = var
+                    else:
+                        missing += [var.op.name]
+            if missing:
+                print("WARNING: %d variables could not be found in checkpoint file that were not explicitly "
+                      "omitted. Using default initialization." % len(missing))
+                [print(x) for x in missing]
+            restore_variables = matched
+
+        return restore_variables
 
     def activation_summaries(self, tower_name=None):
         tower = self.tower(tower_name)
