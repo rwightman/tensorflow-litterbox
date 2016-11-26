@@ -45,6 +45,7 @@ distort_params_sdc = {
     'area_range': [0.75, 1.0],
     'min_object_covered': 0.825,
     'hue_delta': 0.1,
+    'angle_range': 3.0,
 }
 
 

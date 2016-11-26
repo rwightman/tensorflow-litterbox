@@ -140,12 +140,12 @@ def distort_affine_cv2(image, alpha_affine=10, random_state=None):
     return distorted_image
 
 
-def distort_affine_skimage(image, angle=10, random_state=None):
+def distort_affine_skimage(image, rotation=10.0, shear=5.0, random_state=None):
     if random_state is None:
         random_state = np.random.RandomState(None)
 
-    rot = np.deg2rad(random_state.randint(-angle, angle))
-    sheer = np.deg2rad(random_state.randint(-angle, angle))
+    rot = np.deg2rad(np.random.uniform(-rotation, rotation))
+    sheer = np.deg2rad(np.random.uniform(-shear, shear))
 
     shape = image.shape
     shape_size = shape[:2]
@@ -199,11 +199,13 @@ distort_params_default = {
     'h_flip': True,
     'v_flip': False,
     'elastic_distortion': False,
-    'affine_distortion': False,
+    'affine_distortion': True,
     'aspect_ratio_range': [0.67, 1.33],
     'area_range': [0.1, 1.0],
     'min_object_covered': 0.1,
     'hue_delta': 0.2,
+    'rotation_range': 10.0,
+    'shear_range': 5.0,
 }
 
 
@@ -259,10 +261,12 @@ def process_for_train(image, height, width, bbox=None, params=distort_params_def
             tf.image_summary('images_with_distorted_bounding_box', image_with_distorted_box)
 
         if params['affine_distortion']:
-            if has_cv2:
-                image = tf.py_func(distort_affine_cv2, [image], [tf.float32])[0]
-            elif has_skimage:
-                image = tf.py_func(distort_affine_skimage, [image], [tf.float32])[0]
+            rotation_range = params['rotation_range']
+            shear_range = params['shear_range']
+            if has_skimage:
+                image = tf.py_func(distort_affine_skimage, [image, rotation_range, shear_range], [tf.float32])[0]
+            #elif has_cv2:
+            #    image = tf.py_func(distort_affine_cv2, [image, angle_range], [tf.float32])[0]
             else:
                 print('Affine image distortion disabled, no cv2 or skimage module present.')
             image.set_shape([height, width, 3])
