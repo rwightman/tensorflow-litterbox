@@ -25,6 +25,8 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string('subset', 'train',
                            """Either 'validation', 'train', 'test'""")
 
+tf.app.flags.DEFINE_boolean('lock_root', False, 'Lock root convnet parameters')
+
 
 class SdcData(DatasetRecord):
     """StateFarm data set."""
@@ -38,7 +40,7 @@ class SdcData(DatasetRecord):
     def num_examples_per_epoch(self):
         """Returns the number of examples in the data subset."""
         if self.subset == 'train':
-            return 431627 #319814 #124200  #964809
+            return 92643 #431627 #319814 #124200  #964809
         elif self.subset == 'validation':
             return 16709 #43134  #57557 # 39000
 
@@ -52,13 +54,10 @@ def main(_):
         'outputs': {'steer': 1},
 
         #'network': 'resnet_v1_152',
-
-        #'network': 'nvidia_sdc',
-        #'version': 2,
-        #'regression_loss': 'mse',
-
+        #'network': 'resnet_v1_101',
         'network': 'resnet_v1_50',
-        'version': 3,
+        'version': 5,
+        'lock_root': FLAGS.lock_root,
         'regression_loss': 'mse',
     }
     model = ModelSdc(params=model_params)

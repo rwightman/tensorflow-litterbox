@@ -43,6 +43,7 @@ class ProcessorSdc(fabric.Processor):
             self.height = math.floor(FLAGS.image_size / FLAGS.image_aspect)
         self.image_fmt = FLAGS.image_fmt
         self.depth = 3
+        self.standardize_input = 'fixed'
         self.standardize_labels = True
         self.mu_law_steering = False
 
@@ -56,7 +57,7 @@ class ProcessorSdc(fabric.Processor):
         processed_image = image_preprocess_sdc(
             image, camera_id,
             height=self.height, width=self.width, image_fmt=self.image_fmt,
-            train=train, thread_id=thread_id)
+            standardize=self.standardize_input, train=train, thread_id=thread_id)
         if mode != 'pred':
             steering_angle, gps_coord = tensors[-2:]
             if steering_angle is not None:

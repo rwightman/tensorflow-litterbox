@@ -31,8 +31,11 @@ import numpy as np
 from copy import deepcopy
 from fabric.image_processing_common import *
 
-SDC_MEAN = [0.2087998337, 0.240992306, 0.284853019]
-SDC_STD = [0.2160449662, 0.2489588968, 0.2898496487]
+#SDC_MEAN = [0.2087998337, 0.240992306, 0.284853019]
+#SDC_STD = [0.2160449662, 0.2489588968, 0.2898496487]
+SDC_MEAN = [0.2956688423, 0.3152727451, 0.3687327858]
+SDC_STD = [0.2538597152, 0.2642534638, 0.277498978]
+
 
 distort_params_sdc = {
     'h_flip': False,
@@ -40,8 +43,8 @@ distort_params_sdc = {
     'elastic_distortion': False,
     'affine_distortion': False,
     'aspect_ratio_range': [0.909, 1.1],
-    'area_range': [0.8, 1.0],
-    'min_object_covered': 0.875,
+    'area_range': [0.75, 1.0],
+    'min_object_covered': 0.85,
     'hue_delta': 0.1,
 }
 
@@ -49,7 +52,7 @@ distort_params_sdc = {
 def image_preprocess_sdc(
         image_buffer, camera_id,
         height, width, image_fmt='jpg',
-        standardize=True, train=False, thread_id=0):
+        standardize='fixed', train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -97,8 +100,13 @@ def image_preprocess_sdc(
     else:
         image = process_for_eval(image, height, width)
 
-    # Rescale to [-1,1] instead of [0, 1)
-    if standardize:
+    # Rescale to [-1,1] or standardize
+    if standardize == 'frame':
+        mean, var = tf.nn.moments(image, axes=[0, 1], shift=0.3)
+        std = tf.sqrt(tf.add(var, .001))
+        image = tf.sub(image, mean)
+        image = tf.div(image, std)
+    elif standardize == 'fixed':
         image = tf.sub(image, SDC_MEAN)
         image = tf.div(image, SDC_STD)
     else:
