@@ -28,13 +28,16 @@ class Challenge2Data(DatasetFile):
 
     def __init__(self, subset):
         super(Challenge2Data, self).__init__(
-            'Challenge2', subset, types=('.png',))
+            'Challenge2', subset, types=('.png', '.jpg'))
 
 
 def main(_):
     util.check_tensorflow_version()
 
     processor = ProcessorSdc()
+    #processor.mu_law_steering = True
+    #processor.standardize_labels = False
+
     feed = FeedImagesWithLabels(
         dataset=Challenge2Data(subset=''),
         processor=processor)
@@ -45,11 +48,8 @@ def main(_):
         #'network': 'resnet_v1_152',
         #'version': 1,
 
-        #'network': 'nvidia_sdc',
-        #'version': 1,
-
         'network': 'resnet_v1_50',
-        'version': 3,
+        'version': 5,
         'bayesian': False,
 
         #'network': 'inception_resnet_v2',  # 199x149
@@ -71,7 +71,6 @@ def main(_):
     if coords:
         coords = np.vstack(coords)
 
-    # Dumps raw class probabilities to CSV file.
     if steering_angles:
         columns_ang = ['frame_id', 'steering_angle']
         df_ang = pd.DataFrame(data={columns_ang[0]: filenames, columns_ang[1]: steering_angles}, columns=columns_ang)

@@ -43,7 +43,7 @@ distort_params_sdc = {
     'affine_distortion': False,
     'aspect_ratio_range': [0.909, 1.1],
     'area_range': [0.75, 1.0],
-    'min_object_covered': 0.825,
+    'min_object_covered': 0.85,
     'hue_delta': 0.1,
     'angle_range': 3.0,
 }
@@ -52,7 +52,7 @@ distort_params_sdc = {
 def image_preprocess_sdc(
         image_buffer, camera_id,
         height, width, image_fmt='jpg',
-        standardize=True, train=False, thread_id=0):
+        standardize='fixed', train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -100,8 +100,13 @@ def image_preprocess_sdc(
     else:
         image = process_for_eval(image, height, width)
 
-    # Rescale to [-1,1] instead of [0, 1)
-    if standardize:
+    # Rescale to [-1,1] or standardize
+    if standardize == 'frame':
+        mean, var = tf.nn.moments(image, axes=[0, 1], shift=0.3)
+        std = tf.sqrt(tf.add(var, .001))
+        image = tf.sub(image, mean)
+        image = tf.div(image, std)
+    elif standardize == 'fixed':
         image = tf.sub(image, SDC_MEAN)
         image = tf.div(image, SDC_STD)
     else:
