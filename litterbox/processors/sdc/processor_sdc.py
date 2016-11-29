@@ -54,13 +54,14 @@ class ProcessorSdc(fabric.Processor):
     def process_example(self, tensors, mode='eval', thread_id=0):
         train = (mode == 'train')
         image, camera_id, image_timestamp = tensors[:3]
-        processed_image = image_preprocess_sdc(
+        processed_image, flip_coeff = image_preprocess_sdc(
             image, camera_id,
             height=self.height, width=self.width, image_fmt=self.image_fmt,
             standardize=self.standardize_input, train=train, thread_id=thread_id)
         if mode != 'pred':
             steering_angle, gps_coord = tensors[-2:]
             if steering_angle is not None:
+                steering_angle = tf.mul(steering_angle, flip_coeff)
                 if self.standardize_labels:
                     steering_angle /= STEERING_STD
                 elif self.mu_law_steering:

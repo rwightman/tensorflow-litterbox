@@ -37,7 +37,7 @@ SDC_MEAN = [0.2956688423, 0.3152727451, 0.3687327858]
 SDC_STD = [0.2538597152, 0.2642534638, 0.277498978]
 
 distort_params_sdc = {
-    'h_flip': False,
+    'h_flip': True,
     'v_flip': False,
     'elastic_distortion': False,
     'affine_distortion': False,
@@ -45,8 +45,33 @@ distort_params_sdc = {
     'area_range': [0.75, 1.0],
     'min_object_covered': 0.85,
     'hue_delta': 0.1,
-    'angle_range': 3.0,
+    'angle_range': 1.5,
 }
+
+
+def _standardize(image, method='frame'):
+    # Rescale to [-1,1] or standardize
+    if method == 'frame':
+        mean, var = tf.nn.moments(image, axes=[0, 1], shift=0.3)
+        std = tf.sqrt(tf.add(var, .001))
+        image = tf.sub(image, mean)
+        image = tf.div(image, std)
+        print(image.get_shape())
+    elif method == 'fixed':
+        image = tf.sub(image, SDC_MEAN)
+        image = tf.div(image, SDC_STD)
+    else:
+        image = tf.sub(image, 0.5)
+        image = tf.mul(image, 2.0)
+    return image
+
+
+def _random_hflip(image, uniform_random):
+    """Randomly flip an image horizontally (left to right).
+    """
+    image = tf.convert_to_tensor(image, name='image')
+    mirror = tf.less(tf.pack([1.0, uniform_random, 1.0]), 0.5)
+    return tf.reverse(image, mirror)
 
 
 def image_preprocess_sdc(
@@ -71,6 +96,7 @@ def image_preprocess_sdc(
     if not height or not width:
         raise ValueError('Please specify target image height & width.')
 
+    flip_coeff = tf.constant(1.0, dtype=tf.float32)
     image = decode_compressed_image(image_buffer, image_fmt)
 
     if train:
@@ -92,25 +118,21 @@ def image_preprocess_sdc(
 
         distort_params = deepcopy(distort_params_default)
         distort_params.update(deepcopy(distort_params_sdc))
+        h_flip = distort_params['h_flip']
+        distort_params['h_flip'] = False  # do not perform h-flip in common processing
         distort_params['aspect_ratio_range'][0] *= (width / height)
         distort_params['aspect_ratio_range'][1] *= (width / height)
 
         image = process_for_train(
             image, height=height, width=width, bbox=bbox, params=distort_params, thread_id=thread_id)
+
+        if h_flip:
+            uniform_random = tf.random_uniform([], 0, 1.0)
+            image = _random_hflip(image, uniform_random)
+            flip_coeff = tf.cond(uniform_random < 0.5, lambda: tf.mul(flip_coeff, -1.0), lambda: flip_coeff)
     else:
         image = process_for_eval(image, height, width)
 
-    # Rescale to [-1,1] or standardize
-    if standardize == 'frame':
-        mean, var = tf.nn.moments(image, axes=[0, 1], shift=0.3)
-        std = tf.sqrt(tf.add(var, .001))
-        image = tf.sub(image, mean)
-        image = tf.div(image, std)
-    elif standardize == 'fixed':
-        image = tf.sub(image, SDC_MEAN)
-        image = tf.div(image, SDC_STD)
-    else:
-        image = tf.sub(image, 0.5)
-        image = tf.mul(image, 2.0)
+    image = _standardize(image, method=standardize)
 
-    return image
+    return image, flip_coeff
