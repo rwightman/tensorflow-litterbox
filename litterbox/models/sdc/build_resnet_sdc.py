@@ -134,6 +134,7 @@ def stack_blocks_dense(net, blocks, output_stride=None,
 
     # The atrous convolution rate parameter.
     rate = 1
+    block_outputs = []
 
     for block in blocks:
         with tf.variable_scope(block.scope, 'block', [net]) as sc:
@@ -154,7 +155,6 @@ def stack_blocks_dense(net, blocks, output_stride=None,
                                             stride=1,
                                             rate=rate)
                         rate *= unit_stride
-
                     else:
                         net = block.unit_fn(net,
                                             depth=unit_depth,
@@ -162,12 +162,13 @@ def stack_blocks_dense(net, blocks, output_stride=None,
                                             stride=unit_stride,
                                             rate=1)
                         current_stride *= unit_stride
+                block_outputs.append(net)
             net = slim.utils.collect_named_outputs(outputs_collections, sc.name, net)
 
     if output_stride is not None and current_stride != output_stride:
         raise ValueError('The target output_stride cannot be reached.')
 
-    return net
+    return net, block_outputs
 
 
 @slim.add_arg_scope
@@ -265,6 +266,152 @@ def resnet_arg_scope(weight_decay=0.0001,
                 return arg_sc
 
 
+def _build_resnet_root(
+        net,
+        block_cfg,
+        global_pool=True,
+        output_stride=None,
+        lock_root=False):
+    """
+
+    Args:
+        net:
+        block_cfg:
+        global_pool:
+        output_stride:
+        lock_root:
+
+    Returns:
+
+    """
+    root_args_trainable = slim.arg_scope([slim.conv2d, slim.batch_norm], trainable=not lock_root)
+    with root_args_trainable:
+        if output_stride is not None:
+            if output_stride % 4 != 0:
+                raise ValueError('The output_stride needs to be a multiple of 4.')
+            output_stride /= 4
+        net = conv2d_same(net, 64, 7, stride=2, scope='conv1')
+        net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1')
+        net, block_outputs = stack_blocks_dense(net, block_cfg, output_stride)
+        print('Blocks', net.get_shape())
+
+        if global_pool:
+            # Global average pooling.
+            net = tf.reduce_mean(net, [1, 2], name='pool5', keep_dims=True)
+            print('Global pool', net.get_shape())
+
+    return net, block_outputs
+
+
+def _build_output(
+        nets,
+        output_cfg,
+        version,
+        is_training=False,
+        bayesian=False,
+        dropout_keep_prob=0.6):
+    """
+
+    Args:
+        nets:
+        output_cfg:
+        version:
+        is_training:
+        bayesian:
+        dropout_keep_prob:
+
+    Returns:
+
+    """
+    assert len(nets) >= 1
+    net = nets[0]
+
+    with tf.variable_scope('Output'):
+        if version == 1:
+            net = slim.flatten(net)
+            net = slim.fully_connected(net, 2048, scope='Fc1')
+            net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
+            net = slim.fully_connected(net, 128, scope='Fc2')
+        elif version == 2:
+            net = slim.flatten(net)
+            net = slim.fully_connected(net, 2048, activation_fn=tf.nn.elu, scope='Fc1')
+            net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
+            net = slim.fully_connected(net, 512, activation_fn=tf.nn.elu, scope='Fc2')
+        elif version == 3 or version == 4:
+            # Version 4 used for mu-law + tanh experiment
+            do_dropout = bayesian or is_training
+            out_scope = slim.arg_scope([slim.conv2d], activation_fn=tf.nn.elu) if version == 3 else \
+                slim.arg_scope([slim.conv2d], activation_fn=tf.nn.elu, normalizer_fn=None)
+            with out_scope:
+                net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
+                print('Fc1', net.get_shape())
+                net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout')
+                net = slim.conv2d(net, 1024, 1, scope='Fc2')
+                print('Fc2', net.get_shape())
+                net = tf.squeeze(net)
+        elif version == 5:
+            # Version 5, add extra FC layer and support for siamese conv
+            do_dropout = bayesian or is_training
+            out_scope = slim.arg_scope(
+                [slim.conv2d], activation_fn=tf.nn.elu, normalizer_fn=None)
+            with out_scope:
+                if len(nets) == 1:
+                    net = slim.dropout(
+                        net, min(1.0, dropout_keep_prob * 1.2), is_training=do_dropout, scope='Dropout1')
+                    net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
+                    print('Fc1', net.get_shape())
+                else:
+                    fc1_nets = []
+                    for i, n in enumerate(nets):
+                        dropout_name = 'Dropout1_%d' % (i + 1)
+                        fc_name = 'Fc1_%d' % (i + 1)
+                        n = slim.dropout(
+                            n, min(1.0, dropout_keep_prob * 1.2), is_training=do_dropout, scope=dropout_name)
+                        n = slim.conv2d(n, 2048, net.get_shape()[1:3], padding='VALID', scope=fc_name)
+                        print(fc_name, n.get_shape())
+                        fc1_nets.append(net)
+                    net = tf.concat(3, fc1_nets)
+                    print('Fc1', net.get_shape())
+                net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout2')
+                net = slim.conv2d(net, 1024, 1, scope='Fc2')
+                print('Fc2', net.get_shape())
+                net = slim.conv2d(net, 512, 1, scope='Fc3')
+                print('Fc3', net.get_shape())
+                net = tf.squeeze(net)
+        elif version == 6:
+            # Version 6 used for multi-resolution feature map experiment
+            assert len(nets) == 2
+            net2 = nets[1]
+            do_dropout = bayesian or is_training
+            out_scope = slim.arg_scope(
+                [slim.conv2d], activation_fn=tf.nn.elu, normalizer_fn=None)
+            with out_scope:
+                net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1a')
+                net2 = slim.conv2d(net2, 1024, net.get_shape()[1:3], padding='VALID', scope='Fc1b')
+                net = tf.concat(3, [net, net2])
+                net = slim.dropout(
+                    net, min(1.0, dropout_keep_prob * 1.2), is_training=do_dropout, scope='Dropout1')
+                print('Fc1', net.get_shape())
+                net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout2')
+                net = slim.conv2d(net, 1024, 1, scope='Fc2')
+                print('Fc2', net.get_shape())
+                net = slim.conv2d(net, 512, 1, scope='Fc3')
+                print('Fc3', net.get_shape())
+                net = tf.squeeze(net)
+
+        output = {}
+        if 'xyz' in output_cfg:
+            output['xyz'] = slim.fully_connected(
+                net, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
+        if 'steer' in output_cfg:
+            output['steer'] = slim.fully_connected(
+                net, output_cfg['steer'],
+                activation_fn=tf.nn.tanh if version == 4 else None,
+                scope='OutputSteer')
+
+        return output
+
+
 def resnet_v1_sdc(
         inputs,
         blocks,
@@ -283,30 +430,11 @@ def resnet_v1_sdc(
     This function generates a family of ResNet v1 models. See the resnet_v1_*()
     methods for specific model instantiations, obtained by selecting different
     block instantiations that produce ResNets of various depths.
-  
-    Training for image classification on Imagenet is usually done with [224, 224]
-    inputs, resulting in [7, 7] feature maps at the output of the last ResNet
-    block for the ResNets defined in [1] that have nominal stride equal to 32.
-    However, for dense prediction tasks we advise that one uses inputs with
-    spatial dimensions that are multiples of 32 plus 1, e.g., [321, 321]. In
-    this case the feature maps at the ResNet output will have spatial shape
-    [(height - 1) / output_stride + 1, (width - 1) / output_stride + 1]
-    and corners exactly aligned with the input image corners, which greatly
-    facilitates alignment of the features to the image. Using as input [225, 225]
-    images results in [8, 8] feature maps at the output of the last ResNet block.
-  
-    For dense prediction tasks, the ResNet needs to run in fully-convolutional
-    (FCN) mode and global_pool needs to be set to False. The ResNets in [1, 2] all
-    have nominal stride equal to 32 and a good choice in FCN mode is to use
-    output_stride=16 in order to increase the density of the computed features at
-    small computational and memory overhead, cf. http://arxiv.org/abs/1606.00915.
-  
+
     Args:
       inputs: A tensor of size [batch, height_in, width_in, channels].
       blocks: A list of length equal to the number of ResNet blocks. Each element
         is a Block object describing the units in the block.
-      num_classes: Number of predicted classes for classification tasks. If None
-        we return the features before the logit layer.
       is_training: whether is training or not.
       global_pool: If True, we perform global average pooling before computing the
         logits. Set to True for image classification, False for dense prediction.
@@ -316,15 +444,9 @@ def resnet_v1_sdc(
       reuse: whether or not the network and its variables should be reused. To be
         able to reuse 'scope' must be given.
       scope: Optional variable_scope.
-  
+
     Returns:
-      net: A rank-4 tensor of size [batch, height_out, width_out, channels_out].
-        If global_pool is False, then height_out and width_out are reduced by a
-        factor of output_stride compared to the respective height_in and width_in,
-        else both height_out and width_out equal one. If num_classes is None, then
-        net is the output of the last ResNet block, potentially after global
-        average pooling. If num_classes is not None, net contains the pre-softmax
-        activations.
+      output: Dict of rank-4 tensors of size [batch, height_out, width_out, channels_out].
       endpoints: A dictionary from components of the network to the corresponding
         activation.
 
@@ -337,70 +459,46 @@ def resnet_v1_sdc(
             [slim.conv2d, bottleneck, stack_blocks_dense], outputs_collections=endpoints_collection)
         arg_scope_train = slim.arg_scope([slim.batch_norm, slim.dropout], is_training=is_training)
         with arg_scope_ep, arg_scope_train:
-            net = inputs
-            root_args_trainable = slim.arg_scope([slim.conv2d, slim.batch_norm], trainable=not lock_root)
-            with root_args_trainable:
-                if output_stride is not None:
-                    if output_stride % 4 != 0:
-                        raise ValueError('The output_stride needs to be a multiple of 4.')
-                    output_stride /= 4
-                net = conv2d_same(net, 64, 7, stride=2, scope='conv1')
-                net = slim.max_pool2d(net, [3, 3], stride=2, scope='pool1')
-                net = stack_blocks_dense(net, blocks, output_stride)
-                print('blocks', net.get_shape())
+            nets = []
+            siamese = True if len(inputs.get_shape()) == 5 else False
+            if siamese:
+                with tf.variable_scope(sc, values=[inputs], reuse=reuse) as scs:
+                    # siamese, multi-image config
+                    unpacked_inputs = tf.unpack(inputs, axis=1)
+                    for i, x in enumerate(unpacked_inputs):
+                        branch_scope = 'Branch_%d' % i
+                        with tf.name_scope(branch_scope):
+                            net, _ = _build_resnet_root(
+                                x,
+                                block_cfg=blocks,
+                                global_pool=global_pool,
+                                output_stride=output_stride,
+                                lock_root=lock_root)
+                        scs.reuse_variables()
+                        nets.append(net)
+            else:
+                # normal config
+                net, block_outputs = _build_resnet_root(
+                    inputs,
+                    block_cfg=blocks,
+                    global_pool=global_pool,
+                    output_stride=output_stride,
+                    lock_root=lock_root)
+                nets.append(net)
 
-            if global_pool:
-                # Global average pooling.
-                net = tf.reduce_mean(net, [1, 2], name='pool5', keep_dims=True)
-                print('Global pool', net.get_shape())
+                if version == 6:
+                    #  version 6 variant takes an additional global pool from earlier block before the last stride
+                    net2 = tf.reduce_mean(block_outputs[11], [1, 2], name='pool5a', keep_dims=True)
+                    print('Global pool 2', net2.get_shape())
+                    nets.append(net2)
 
-            with tf.variable_scope('Output'):
-                if version == 1:
-                    net = slim.flatten(net)
-                    net = slim.fully_connected(net, 2048, scope='Fc1')
-                    net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
-                    net = slim.fully_connected(net, 128, scope='Fc2')
-                elif version == 2:
-                    net = slim.flatten(net)
-                    net = slim.fully_connected(net, 2048, activation_fn=tf.nn.elu, scope='Fc1')
-                    net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
-                    net = slim.fully_connected(net, 512, activation_fn=tf.nn.elu, scope='Fc2')
-                elif version == 3 or version == 4:
-                    do_dropout = bayesian or is_training
-                    out_scope = slim.arg_scope([slim.conv2d], activation_fn=tf.nn.elu) if version == 3 else \
-                        slim.arg_scope([slim.conv2d], activation_fn=tf.nn.elu, normalizer_fn=None)
-                    with out_scope:
-                        net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
-                        print('Fc1', net.get_shape())
-                        net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout')
-                        net = slim.conv2d(net, 1024, 1, scope='Fc2')
-                        print('Fc2', net.get_shape())
-                        net = tf.squeeze(net)
-                elif version == 5:
-                    do_dropout = bayesian or is_training
-                    out_scope = slim.arg_scope(
-                        [slim.conv2d], activation_fn=tf.nn.elu, normalizer_fn=None)
-                    with out_scope:
-                        net = slim.dropout(
-                            net, min(1.0, dropout_keep_prob * 1.2), is_training=do_dropout, scope='Dropout1')
-                        net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
-                        print('Fc1', net.get_shape())
-                        net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout2')
-                        net = slim.conv2d(net, 1024, 1, scope='Fc2')
-                        print('Fc2', net.get_shape())
-                        net = slim.conv2d(net, 512, 1, scope='Fc3')
-                        print('Fc3', net.get_shape())
-                        net = tf.squeeze(net)
-
-                output = {}
-                if 'xyz' in output_cfg:
-                    output['xyz'] = slim.fully_connected(
-                        net, output_cfg['xyz'], activation_fn=None, scope='OutputXYZ')
-                if 'steer' in output_cfg:
-                    output['steer'] = slim.fully_connected(
-                        net, output_cfg['steer'],
-                        activation_fn=tf.nn.tanh if version == 4 else None,
-                        scope='OutputSteer')
+            output = _build_output(
+                nets,
+                output_cfg=output_cfg,
+                version=version,
+                is_training=is_training,
+                bayesian=bayesian,
+                dropout_keep_prob=dropout_keep_prob)
 
             endpoints = slim.utils.convert_collection_to_dict(endpoints_collection)
 

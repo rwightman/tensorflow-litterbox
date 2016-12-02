@@ -55,6 +55,7 @@ def parse_proto_sdc(example_serialized):
 
     feature_map = {
         'image/encoded': tf.FixedLenFeature([], dtype=tf.string, default_value=''),
+        #'image/encoded': tf.FixedLenFeature([2], dtype=tf.string, default_value=['', '']),
         'image/frame_id': tf.FixedLenFeature([], dtype=tf.string, default_value='center_camera'),
         'image/timestamp': tf.FixedLenFeature([1], dtype=tf.int64, default_value=-1),
         'steer/angle': tf.FixedLenFeature([2], dtype=tf.float32, default_value=[0.0, 0.0]),
@@ -80,7 +81,7 @@ def parse_proto_sdc(example_serialized):
         steering_time_delta = tf.cast(steering_timestamp[1] - steering_timestamp[0], tf.float64)
         steering_image_time_delta = tf.cast(image_timestamp - steering_timestamp[0], tf.float64)
         steering_slope = tf.cond(
-            tf.equal(steering_time_delta, zero_const),
+            tf.less(steering_time_delta, .001),
             lambda: zero_const,
             lambda: steering_angle_delta / steering_time_delta)
         steering_angle = tf.cast(steering_angle[0], tf.float64) + steering_slope * steering_image_time_delta

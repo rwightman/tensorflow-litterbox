@@ -33,15 +33,16 @@ def main():
         else:
             df.iloc[:, 1:] = df.iloc[:, 1:] * weight
         frames.append(df)
-    
+
     merged = pd.concat(frames)
+    group_col = merged.columns[0]
     weights_sum = sum(weights)
     if mean_type == 'geom':
-        result = merged.groupby(merged.Img).prod()
+        result = merged.groupby(merged[group_col]).prod()
         result = result.pow(1/weights_sum)
         result = result.div(result.sum(axis=1), axis=0)
     else:
-        result = merged.groupby(merged.Img).sum()
+        result = merged.groupby(merged[group_col]).sum()
         result = result / weights_sum
     
     result.to_csv(outfile)

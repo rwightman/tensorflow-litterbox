@@ -46,6 +46,7 @@ class ProcessorSdc(fabric.Processor):
         self.standardize_input = 'fixed'
         self.standardize_labels = True
         self.mu_law_steering = False
+        self.num_input_images = 1
 
     def parse_example(self, serialized_example):
         parsed = parse_proto_sdc(serialized_example)
@@ -54,10 +55,28 @@ class ProcessorSdc(fabric.Processor):
     def process_example(self, tensors, mode='eval', thread_id=0):
         train = (mode == 'train')
         image, camera_id, image_timestamp = tensors[:3]
-        processed_image = image_preprocess_sdc(
-            image, camera_id,
-            height=self.height, width=self.width, image_fmt=self.image_fmt,
-            standardize=self.standardize_input, train=train, thread_id=thread_id)
+
+        #FIXME push single/multi image handling into image_process_sdc if we want to share random augmentations
+        if self.num_input_images > 1:
+            assert(len(image.get_shape()) > 0)
+            print('Multi image')
+            split_image = tf.unpack(image)
+            split_processed = []
+            for i, x in enumerate(split_image):
+                suffix = '%d' % i
+                xp = image_preprocess_sdc(
+                    x, camera_id,
+                    height=self.height, width=self.width, image_fmt=self.image_fmt,
+                    standardize=self.standardize_input, train=train, summary_suffix=suffix, thread_id=thread_id)
+                split_processed.append(xp)
+            processed_image = tf.pack(split_processed)
+        else:
+            print('Single image')
+            processed_image = image_preprocess_sdc(
+                image, camera_id,
+                height=self.height, width=self.width, image_fmt=self.image_fmt,
+                standardize=self.standardize_input, train=train, thread_id=thread_id)
+
         if mode != 'pred':
             steering_angle, gps_coord = tensors[-2:]
             if steering_angle is not None:
@@ -76,12 +95,16 @@ class ProcessorSdc(fabric.Processor):
         images, timestamps, steering_angles, gps_coords = batch_tensors
 
         images = tf.cast(images, tf.float32)
-        images = tf.reshape(images, shape=[batch_size, self.height, self.width, self.depth])
+        if self.num_input_images > 1:
+            images = tf.reshape(images, shape=[batch_size, self.num_input_images, self.height, self.width, self.depth])
+        else:
+            images = tf.reshape(images, shape=[batch_size, self.height, self.width, self.depth])
         timestamps = tf.reshape(timestamps, [batch_size])
         steering_angles = tf.reshape(steering_angles, [batch_size, 1])
         gps_coords = tf.reshape(gps_coords, [batch_size, 2])
 
         if num_splits > 0:
+            # Split tensors for multi-gpu training
             images = tf.split(0, num_splits, images)
             timestamps = tf.split(0, num_splits, timestamps)
             steering_angles = tf.split(0, num_splits, steering_angles)
