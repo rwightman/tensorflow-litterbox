@@ -70,9 +70,11 @@ class ProcessorSdc(fabric.Processor):
                     standardize=self.standardize_input, train=train, summary_suffix=suffix, thread_id=thread_id)
                 split_processed.append(xp)
             processed_image = tf.pack(split_processed)
+            #FIXME need to sort out flip across mult-images
+            flip_coeff = tf.constant(1.0, dtype=tf.float32)
         else:
             print('Single image')
-            processed_image = image_preprocess_sdc(
+            processed_image, flip_coeff = image_preprocess_sdc(
                 image, camera_id,
                 height=self.height, width=self.width, image_fmt=self.image_fmt,
                 standardize=self.standardize_input, train=train, thread_id=thread_id)
@@ -80,6 +82,7 @@ class ProcessorSdc(fabric.Processor):
         if mode != 'pred':
             steering_angle, gps_coord = tensors[-2:]
             if steering_angle is not None:
+                steering_angle = tf.mul(steering_angle, flip_coeff)
                 if self.standardize_labels:
                     steering_angle /= STEERING_STD
                 elif self.mu_law_steering:
