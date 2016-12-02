@@ -59,12 +59,12 @@ class ProcessorSdc(fabric.Processor):
         #FIXME push single/multi image handling into image_process_sdc if we want to share random augmentations
         if self.num_input_images > 1:
             assert(len(image.get_shape()) > 0)
-            print('Multi image')
+            print('Multi image', image.get_shape())
             split_image = tf.unpack(image)
             split_processed = []
             for i, x in enumerate(split_image):
                 suffix = '%d' % i
-                xp = image_preprocess_sdc(
+                xp, _ = image_preprocess_sdc(
                     x, camera_id,
                     height=self.height, width=self.width, image_fmt=self.image_fmt,
                     standardize=self.standardize_input, train=train, summary_suffix=suffix, thread_id=thread_id)
@@ -86,7 +86,7 @@ class ProcessorSdc(fabric.Processor):
                 if self.standardize_labels:
                     steering_angle /= STEERING_STD
                 elif self.mu_law_steering:
-                    print("Encode angles")
+                    print("Encode mu-law angles")
                     steering_angle = mu_law_steering_enc(steering_angle)
             if gps_coord is not None and self.standardize_labels:
                 gps_coord = (gps_coord - GPS_MEAN) / GPS_STD

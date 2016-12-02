@@ -25,11 +25,17 @@ FLAGS = tf.app.flags.FLAGS
 tf.app.flags.DEFINE_string('subset', 'train',
                            """Either 'validation', 'train', 'test'""")
 
+tf.app.flags.DEFINE_string('root_network', 'resnet_v1_50',
+                           """Either resnet_v1_50, resnet_v1_101, resnet_v1_152, inception_resnet_v2, nvidia_sdc""")
+
+tf.app.flags.DEFINE_integer('top_version', 5,
+                           """Top level network version, specifies output layer variations. See model code.""")
+
 tf.app.flags.DEFINE_boolean('lock_root', False, 'Lock root convnet parameters')
 
 
 class SdcData(DatasetRecord):
-    """StateFarm data set."""
+    """Self-driving car dataset."""
 
     def __init__(self):
         super(SdcData, self).__init__('sdc', FLAGS.subset)
@@ -40,23 +46,32 @@ class SdcData(DatasetRecord):
     def num_examples_per_epoch(self):
         """Returns the number of examples in the data subset."""
         if self.subset == 'train':
-            return 92643 #431627 #319814 #124200  #964809
+            return 92643 #431627 #319814
         elif self.subset == 'validation':
-            return 16709 #43134  #57557 # 39000
+            return 16709 #43134 #57557
 
 
 def main(_):
     util.check_tensorflow_version()
 
-    feed = FeedImagesWithLabels(dataset=SdcData(), processor=ProcessorSdc())
+    processor = ProcessorSdc()
+    processor.standardize_input = 'frame'
+    #processor.num_input_images = 2
+
+    feed = FeedImagesWithLabels(dataset=SdcData(), processor=processor)
 
     model_params = {
-        'outputs': {'steer': 1},
+        'outputs': {
+            'steer': 1,
+        #    'xyz': 2,
+        },
 
-        #'network': 'resnet_v1_152',
-        #'network': 'resnet_v1_101',
-        'network': 'resnet_v1_50',
-        'version': 5,
+        #'network': 'resnet_v1_50',
+        #'version': 5,
+
+        'network': FLAGS.root_network,
+        'version': FLAGS.top_version,
+        'bayesian': False,
         'lock_root': FLAGS.lock_root,
         'regression_loss': 'mse',
     }

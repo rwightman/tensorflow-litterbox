@@ -355,23 +355,13 @@ def _build_output(
             out_scope = slim.arg_scope(
                 [slim.conv2d], activation_fn=tf.nn.elu, normalizer_fn=None)
             with out_scope:
-                if len(nets) == 1:
-                    net = slim.dropout(
-                        net, min(1.0, dropout_keep_prob * 1.2), is_training=do_dropout, scope='Dropout1')
-                    net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
-                    print('Fc1', net.get_shape())
-                else:
-                    fc1_nets = []
-                    for i, n in enumerate(nets):
-                        dropout_name = 'Dropout1_%d' % (i + 1)
-                        fc_name = 'Fc1_%d' % (i + 1)
-                        n = slim.dropout(
-                            n, min(1.0, dropout_keep_prob * 1.2), is_training=do_dropout, scope=dropout_name)
-                        n = slim.conv2d(n, 2048, net.get_shape()[1:3], padding='VALID', scope=fc_name)
-                        print(fc_name, n.get_shape())
-                        fc1_nets.append(net)
-                    net = tf.concat(3, fc1_nets)
-                    print('Fc1', net.get_shape())
+                if len(nets) > 1:
+                    net = tf.concat(3, nets)
+                    print('Siamese concat', net.get_shape())
+                net = slim.dropout(
+                    net, min(1.0, dropout_keep_prob * 1.2), is_training=do_dropout, scope='Dropout1')
+                net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
+                print('Fc1', net.get_shape())
                 net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout2')
                 net = slim.conv2d(net, 1024, 1, scope='Fc2')
                 print('Fc2', net.get_shape())

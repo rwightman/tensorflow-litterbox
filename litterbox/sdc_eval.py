@@ -40,7 +40,7 @@ class SdcData(DatasetRecord):
         if self.subset == 'train':
             return 431627 #319814 #124200  #964809
         elif self.subset == 'validation':
-            return 16709 #43134  #57557 # 39000
+            return 16709 #43134 #57557 #39000
 
 
 def main(_):
@@ -49,10 +49,14 @@ def main(_):
     processor = ProcessorSdc()
     #processor.mu_law_steering = True
     #processor.standardize_labels = False
+
     feed = FeedImagesWithLabels(dataset=SdcData(), processor=processor)
 
     model_params = {
-        'outputs': {'steer': 1},
+        'outputs': {
+            'steer': 1,
+        #    'xyz': 2,
+        },
 
         #'network': 'resnet_v1_152',
         #'version': 1,
@@ -63,11 +67,8 @@ def main(_):
         #'network': 'resnet_v1_101',  # 192x128
         #'version': 3,
 
-        'network': 'resnet_v1_50',  # 192x128
-        'version': 3,
-
-        #'network': 'inception_resnet_v2',  # 199x149
-        #'version': 3,
+        'network': 'resnet_v1_50',
+        'version': 5,
     }
     model = ModelSdc(params=model_params)
 

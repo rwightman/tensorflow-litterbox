@@ -43,7 +43,10 @@ def main(_):
         processor=processor)
 
     model_params = {
-        'outputs': {'steer': 1}, #'xyz': 2},
+        'outputs': {
+            'steer': 1,
+        #    'xyz': 2,
+        },
 
         #'network': 'resnet_v1_152',
         #'version': 1,
@@ -51,9 +54,6 @@ def main(_):
         'network': 'resnet_v1_50',
         'version': 5,
         'bayesian': False,
-
-        #'network': 'inception_resnet_v2',  # 199x149
-        #'version': 3,
     }
     model = ModelSdc(params=model_params)
 

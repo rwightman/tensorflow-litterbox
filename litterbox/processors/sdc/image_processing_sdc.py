@@ -53,15 +53,17 @@ distort_params_sdc = {
 def _standardize(image, method='frame'):
     # Rescale to [-1,1] or standardize
     if method == 'frame':
+        print("Per-frame standardize", image.get_shape())
         mean, var = tf.nn.moments(image, axes=[0, 1], shift=0.3)
         std = tf.sqrt(tf.add(var, .001))
         image = tf.sub(image, mean)
         image = tf.div(image, std)
-        print(image.get_shape())
     elif method == 'fixed':
+        print("Fixed standardize", image.get_shape())
         image = tf.sub(image, SDC_MEAN)
         image = tf.div(image, SDC_STD)
     else:
+        print("Normalize [0, 1) -> [-1, 1)", image.get_shape())
         image = tf.sub(image, 0.5)
         image = tf.mul(image, 2.0)
     return image
