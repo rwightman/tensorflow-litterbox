@@ -15,28 +15,54 @@ from __future__ import print_function
 import tensorflow as tf
 from fabric import util
 from fabric import exec_train
-from imagenet_data import ImagenetData
-from models import ModelInception
-from models import ModelGoogle
+from feeds import FeedImagesWithLabels
 from processors import ProcessorImagenet
+from models import ModelMySlim
+from models import ModelGoogleSlim
+from imagenet_data import ImagenetData
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_string('subset', 'train',
-                           """Either 'validation', 'train', 'test'""")
+tf.app.flags.DEFINE_string(
+    'subset', 'train',
+    """Either 'validation', 'train', 'test'""")
+
+tf.app.flags.DEFINE_boolean(
+    'my', False,
+    """Enable my variants of the image classification models""")
+
+tf.app.flags.DEFINE_string(
+    'network', 'inception_v4',
+    """See models/google/nets/nets_factory.py or models/my_slim/nets_factory.py""")
+
+tf.app.flags.DEFINE_integer(
+    'label_offset', 0,
+    """Offset of labels in dataset. Set to 1 if network trained without background but dataset includes it.""")
+
 
 def main(_):
     util.check_tensorflow_version()
 
+    dataset = ImagenetData(subset=FLAGS.subset, background=True)
+
     processor = ProcessorImagenet()
+    processor.label_offset = FLAGS.label_offset
 
-    dataset = ImagenetData(subset=FLAGS.subset)
-    model = ModelGoogle(network='resnet_v1_152')
-    #model = ModelInception(variant=ModelInception.Variant.ResnetV2)
-    #model = ModelResnet(num_layers=50, width_factor=1)
-    #model = ModelVgg(19)
+    feed = FeedImagesWithLabels(dataset=dataset, processor=processor)
 
-    exec_train.train(dataset, processor=processor, model=model)
+    model_params = {
+        'num_classes': dataset.num_classes_with_background(),
+        'network': FLAGS.network,
+    }
+
+    if FLAGS.my:
+        # My variants of Resnet, Inception, and VGG networks
+        model = ModelMySlim(params=model_params)
+    else:
+        # Google's tf.slim models
+        model = ModelGoogleSlim(params=model_params)
+
+    exec_train.train(feed=feed, model=model)
 
 if __name__ == '__main__':
     tf.app.run()

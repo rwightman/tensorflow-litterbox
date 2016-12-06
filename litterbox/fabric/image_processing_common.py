@@ -46,10 +46,67 @@ tf.app.flags.DEFINE_integer('image_size', 299,
                             """Provide square images of this size.""")
 tf.app.flags.DEFINE_float('image_aspect', 0.0,
                           """Aspect ratio based sizing, square image_size*image_size if 0""")
-tf.app.flags.DEFINE_string('image_col', 'default',
-                           """Either 'default' RGB [-1,1] or 'caffe' BGR [0,255]""")
+tf.app.flags.DEFINE_string('image_norm', '',
+                           """Either 'caffe' BGR [0,255], 'caffe_rgb' [0, 255],
+                           'frame' per-frame standardize, 'global' standardize, 'default' [-1, 1].""")
 tf.app.flags.DEFINE_string('image_fmt', 'jpg',
                            """Either 'jpg', 'png', or 'gif'""")
+
+
+IMAGENET_MEAN_CAFFE = [103.939, 116.779, 123.68]
+IMAGENET_MEAN_STD = [
+    [0.485, 0.456, 0.406],  # mean
+    [0.229, 0.224, 0.225],  # std
+]
+
+
+def image_normalize(
+        image,
+        method='global',
+        global_mean_std=IMAGENET_MEAN_STD,
+        caffe_mean=IMAGENET_MEAN_CAFFE):
+    """
+
+    Args:
+        image:
+        method:
+        global_mean_std:
+        caffe_mean:
+
+    Returns:
+
+    """
+    if method == 'caffe' or method == 'caffe_bgr':
+        print('Caffe BGR normalize', image.get_shape())
+        # Rescale to [0, 255]
+        image = tf.mul(image, 255.0)
+        # Convert RGB to BGR
+        red, green, blue = tf.split(2, 3, image)
+        image = tf.concat(2, [blue, green, red])
+        tf.sub(image, caffe_mean)
+    elif method == 'caffe_rgb':
+        print('Caffe RGB normalize', image.get_shape())
+        # Rescale to [0, 255]
+        image = tf.mul(image, 255.0)
+        caffe_mean_rgb = tf.gather(caffe_mean, [2, 1, 0])
+        image = tf.sub(image, caffe_mean_rgb)
+    elif method == 'frame':
+        print("Per-frame standardize", image.get_shape())
+        mean, var = tf.nn.moments(image, axes=[0, 1], shift=0.3)
+        std = tf.sqrt(tf.add(var, .001))
+        image = tf.sub(image, mean)
+        image = tf.div(image, std)
+    elif method == 'global':
+        print('Global standardize', image.get_shape())
+        image = tf.sub(image, global_mean_std[0])
+        image = tf.div(image, global_mean_std[1])
+    else:
+        assert method == 'default'
+        print('Default normalize [-1, 1]', image.get_shape())
+        # Rescale to [-1,1] instead of [0, 1)
+        image = tf.sub(image, 0.5)
+        image = tf.mul(image, 2.0)
+    return image
 
 
 def decode_compressed_image(image_buffer, image_fmt='jpg', depth=3, scope=None):

@@ -19,6 +19,7 @@ from .parse_proto_imagenet import parse_proto_imagenet
 from .image_processing_imagenet import image_preprocess_imagenet
 from fabric.image_processing_common import *  # FIXME for annoying flags
 
+
 class ProcessorImagenet(fabric.Processor):
 
     def __init__(self):
@@ -34,21 +35,30 @@ class ProcessorImagenet(fabric.Processor):
         else:
             self.width = FLAGS.image_size
             self.height = math.floor(FLAGS.image_size / FLAGS.image_aspect)
-
         self.depth = 3
-        self.caffe_fmt = True if FLAGS.image_col == 'caffe' else False
+        self.normalize = FLAGS.image_norm if FLAGS.image_norm else 'default'
+        self.label_offset = 0   # offset to subtract from label index in dataset
+        self.output_offset = 0  # offset to subtract from output prediction from model
 
     def parse_example(self, serialized_example):
-        parsed = parse_proto_imagenet(serialized_example)
-        # image_buffer, bbox, file name, class name, class label
+        parsed = parse_proto_imagenet(serialized_example, self.label_offset)
+        # image_buffer, filename (example id), bbox, class name, class label
         return parsed
 
     def process_example(self, data, mode='eval', thread_id=0):
         train = (mode == 'train')
-        image_buffer, bbox, name, _, label_index = data
+        image_buffer, name = data[:2]
+
+        bbox = None
+        label_index = tf.constant(0, dtype=tf.int32)
+        if mode != 'pred':
+            bbox, _, label_index = data[-3:]
+
         image_processed = image_preprocess_imagenet(
-            image_buffer, height=self.height, width=self.width,
-            bbox=bbox, train=train, thread_id=thread_id)
+            image_buffer,
+            height=self.height, width=self.width, bbox=bbox,
+            normalize=self.normalize, train=train, thread_id=thread_id)
+
         return image_processed, name, label_index
 
     def reshape_batch(self, batch_data, batch_size, num_splits=0):
@@ -64,3 +74,12 @@ class ProcessorImagenet(fabric.Processor):
             labels = tf.split(0, num_splits, labels)
 
         return images, names, labels
+
+    def decode_output(self, value, key=None):
+        if self.output_offset > 0:
+            outputs = tf.slice(value, [0, self.output_offset], [-1, -1])
+        elif self.output_offset < 0:
+            outputs = tf.pad(value, [[0, 0], [-self.output_offset, 0]])
+        else:
+            outputs = value
+        return outputs

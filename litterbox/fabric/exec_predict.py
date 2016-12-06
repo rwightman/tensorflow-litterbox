@@ -119,7 +119,7 @@ def _reduce_batch(outputs, identities, batch_size, f=8):
     return outputs, tf.gather(identities, idx)
 
 
-def predict(feed, model):
+def predict(feed, model, raw_outputs=False):
     """Predict/infer outputs for dataset using model."""
     with tf.Graph().as_default():
         # Get images and labels from the dataset.
@@ -127,7 +127,10 @@ def predict(feed, model):
 
         # Build a Graph that computes the predictions from the inference model.
         outputs = model.build_tower(inputs)
-        predictions = model.get_predictions(outputs, processor=feed.processor)
+        if raw_outputs:
+            predictions = outputs
+        else:
+            predictions = model.get_predictions(outputs, processor=feed.processor)
 
         if feed.sample:
             predictions, identities = _reduce_batch(

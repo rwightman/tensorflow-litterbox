@@ -26,7 +26,8 @@ from __future__ import print_function
 
 import tensorflow as tf
 
-def parse_proto_imagenet(example_serialized):
+
+def parse_proto_imagenet(example_serialized, label_offset=0):
     """Parses an Example proto containing a training example of an image.
 
     The output of the build_image_data.py image preprocessing script is a dataset
@@ -78,6 +79,7 @@ def parse_proto_imagenet(example_serialized):
 
     features = tf.parse_single_example(example_serialized, feature_map)
     label = tf.cast(features['image/class/label'], dtype=tf.int32)
+    label = tf.sub(label, label_offset)
 
     xmin = tf.expand_dims(features['image/object/bbox/xmin'].values, 0)
     ymin = tf.expand_dims(features['image/object/bbox/ymin'].values, 0)
@@ -92,4 +94,4 @@ def parse_proto_imagenet(example_serialized):
     bbox = tf.expand_dims(bbox, 0)
     bbox = tf.transpose(bbox, [0, 2, 1])
 
-    return features['image/encoded'], bbox, features['image/filename'], features['image/class/text'], label
+    return features['image/encoded'], features['image/filename'], bbox, features['image/class/text'], label

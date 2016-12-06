@@ -18,9 +18,9 @@ from fabric.dataset_record import DatasetRecord
 class ImagenetData(DatasetRecord):
     """StateFarm data set."""
 
-    def __init__(self, subset):
+    def __init__(self, subset, background=True):
         super(ImagenetData, self).__init__('Imagenet', subset)
-        self.has_background_class = True
+        self.has_background_class = background
 
     def num_classes(self):
         return 1000

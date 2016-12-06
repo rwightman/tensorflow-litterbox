@@ -43,7 +43,7 @@ class ProcessorSdc(fabric.Processor):
             self.height = math.floor(FLAGS.image_size / FLAGS.image_aspect)
         self.image_fmt = FLAGS.image_fmt
         self.depth = 3
-        self.standardize_input = 'fixed'
+        self.standardize_input = 'global'
         self.standardize_labels = True
         self.mu_law_steering = False
         self.num_input_images = 1
@@ -54,7 +54,7 @@ class ProcessorSdc(fabric.Processor):
 
     def process_example(self, tensors, mode='eval', thread_id=0):
         train = (mode == 'train')
-        image, camera_id, image_timestamp = tensors[:3]
+        image, image_timestamp, camera_id = tensors[:3]
 
         #FIXME push single/multi image handling into image_process_sdc if we want to share random augmentations
         if self.num_input_images > 1:
@@ -67,7 +67,7 @@ class ProcessorSdc(fabric.Processor):
                 xp, _ = image_preprocess_sdc(
                     x, camera_id,
                     height=self.height, width=self.width, image_fmt=self.image_fmt,
-                    standardize=self.standardize_input, train=train, summary_suffix=suffix, thread_id=thread_id)
+                    normalize=self.standardize_input, train=train, summary_suffix=suffix, thread_id=thread_id)
                 split_processed.append(xp)
             processed_image = tf.pack(split_processed)
             #FIXME need to sort out flip across mult-images
@@ -77,7 +77,7 @@ class ProcessorSdc(fabric.Processor):
             processed_image, flip_coeff = image_preprocess_sdc(
                 image, camera_id,
                 height=self.height, width=self.width, image_fmt=self.image_fmt,
-                standardize=self.standardize_input, train=train, thread_id=thread_id)
+                normalize=self.standardize_input, train=train, thread_id=thread_id)
 
         if mode != 'pred':
             steering_angle, gps_coord = tensors[-2:]

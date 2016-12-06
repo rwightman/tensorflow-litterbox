@@ -93,6 +93,10 @@ class Model(object):
                 model_variable_names,
                 self.output_scopes())
             restore_variables = filtered_variables
+            diff = set(model_variable_names).difference({x.op.name for x in restore_variables})
+            if diff:
+                print('INFO: %d variables were explicitly omitted from restore.' % len(diff))
+                [print(x) for x in diff]
 
         restore_variables = self._remap_variable_names(
             restore_variables, restore_outputs, checkpoint_variable_set)
@@ -115,7 +119,7 @@ class Model(object):
             if missing:
                 print("WARNING: %d variables could not be found in checkpoint file that were not explicitly "
                       "omitted. Using default initialization." % len(missing))
-                [print(x) for x in missing]
+                [print(x) for x in missing if not x.endswith('/Momentum')]
             restore_variables = matched
 
         return restore_variables

@@ -22,6 +22,16 @@ from feeds import FeedImagesWithLabels
 from models import ModelSdc
 from processors import ProcessorSdc
 
+FLAGS = tf.app.flags.FLAGS
+
+tf.app.flags.DEFINE_string(
+    'root_network', 'resnet_v1_50',
+    """Either resnet_v1_50, resnet_v1_101, resnet_v1_152, inception_resnet_v2, nvidia_sdc""")
+
+tf.app.flags.DEFINE_integer(
+    'top_version', 5,
+    """Top level network version, specifies output layer variations. See model code.""")
+
 
 class Challenge2Data(DatasetFile):
     # Example dataset for feeding folder of images into model
@@ -37,6 +47,7 @@ def main(_):
     processor = ProcessorSdc()
     #processor.mu_law_steering = True
     #processor.standardize_labels = False
+    processor.standardize_input = 'frame'
 
     feed = FeedImagesWithLabels(
         dataset=Challenge2Data(subset=''),
@@ -51,8 +62,11 @@ def main(_):
         #'network': 'resnet_v1_152',
         #'version': 1,
 
-        'network': 'resnet_v1_50',
-        'version': 5,
+        #'network': 'resnet_v1_50',
+        #'version': 5,
+
+        'network': FLAGS.root_network,
+        'version': FLAGS.top_version,
         'bayesian': False,
     }
     model = ModelSdc(params=model_params)

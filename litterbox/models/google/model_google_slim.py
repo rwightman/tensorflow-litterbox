@@ -14,20 +14,29 @@ from __future__ import print_function
 
 import re
 import tensorflow as tf
+from collections import OrderedDict
 from fabric import model
 from models.google.nets import nets_factory
 slim = tf.contrib.slim
 
+google_default_params = {
+    'network': 'inception_resnet_v2',
+    'num_classes': 1000,
+}
 
-class ModelGoogle(model.Model):
 
-    def __init__(self, num_classes=1000, network='inception_resnet_v2'):
-        super(ModelGoogle, self).__init__()
+class ModelGoogleSlim(model.Model):
+
+    def __init__(self, params=google_default_params):
+        super(ModelGoogleSlim, self).__init__()
+        params = model.merge_params(google_default_params, params)
 
         # model_name must correspond to one of google's network names in nets package,
         # see nets_factory.py for valid names.
-        self.network = network
-        self.num_classes = num_classes
+        self.network = params['network']
+        assert self.network in nets_factory.networks_map
+        self.num_classes = params['num_classes']
+        assert self.num_classes > 1
 
     def build_tower(self, images, is_training=False, scope=None):
         weight_decay = 0.0001
@@ -76,18 +85,26 @@ class ModelGoogle(model.Model):
                 label_smoothing=0.1, weight=0.4, scope='aux_loss')
 
     def output_scopes(self):
-        scopes = ['logits', 'Logits', 'AuxLogits']
+        scopes = ['logits', 'Logits', 'AuxLogits/Aux_logits', 'AuxLogits/Logits', 'AuxLogits/Conv2d_2b_1x1']
         return [self.model_variable_scope + '/' + x for x in scopes]
 
+    def get_predictions(self, outputs, processor):
+        if processor is not None:
+            logits = processor.decode_output(outputs)
+        else:
+            logits = outputs
+        return tf.nn.softmax(logits)
+
     @staticmethod
-    def eval_loss_op(logits, labels):
+    def eval_ops(logits, labels, processor):
         """Generate a simple (non tower based) loss op for use in evaluation.
 
         Args:
-          logits: List of logits from inference(). Each entry is a 2-D float Tensor.
-          labels: Labels from distorted_inputs or inputs(). 1-D tensor of shape [batch_size]
-          batch_size: integer
+          logits: List of logits from inference(). Shape [batch_size, num_classes], dtype float32/64
+          labels: Labels from distorted_inputs or inputs(). batch_size vector with int32/64 values in [0, num_classes).
         """
-        cross_entropy = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
-        loss = tf.reduce_mean(cross_entropy)
-        return loss
+        top_1_op = tf.nn.in_top_k(logits, labels, 1)
+        top_5_op = tf.nn.in_top_k(logits, labels, 5)
+        loss_op = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
+        return OrderedDict([('top 5', top_5_op), ('top 1', top_1_op), ('loss', loss_op)])
+

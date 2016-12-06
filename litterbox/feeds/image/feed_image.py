@@ -184,11 +184,11 @@ class FeedImagesWithLabels(fabric.Feed):
             input_buffer = prefetch_head[1]
             label_index = prefetch_head[2]
 
-            #FIXME hack, need to fix this so we can have processing pipeline that doesn't need
+            #FIXME hack, need to fix this so we  can have processing pipeline that doesn't need
             #to handle labels for inference and a file pipeline that can actually training with
             #non-integer index labels
 
-            data_packed = [input_buffer, label_index, filename]
+            data_packed = [input_buffer, filename, label_index]
             processed = self.processor.process_example(data_packed, mode=mode, thread_id=thread_id)
             if self.sample > 0:
                 processed = [tf.gather(tf.expand_dims(x, 0), [0] * self.sample) for x in processed]

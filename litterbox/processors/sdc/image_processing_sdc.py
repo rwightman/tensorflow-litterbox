@@ -35,7 +35,7 @@ from fabric.image_processing_common import *
 #SDC_STD = [0.2160449662, 0.2489588968, 0.2898496487]
 SDC_MEAN = [0.2956688423, 0.3152727451, 0.3687327858]
 SDC_STD = [0.2538597152, 0.2642534638, 0.277498978]
-
+SDC_MEAN_STD = [SDC_MEAN, SDC_STD]
 
 distort_params_sdc = {
     'h_flip': True,
@@ -50,25 +50,6 @@ distort_params_sdc = {
 }
 
 
-def _standardize(image, method='frame'):
-    # Rescale to [-1,1] or standardize
-    if method == 'frame':
-        print("Per-frame standardize", image.get_shape())
-        mean, var = tf.nn.moments(image, axes=[0, 1], shift=0.3)
-        std = tf.sqrt(tf.add(var, .001))
-        image = tf.sub(image, mean)
-        image = tf.div(image, std)
-    elif method == 'fixed':
-        print("Fixed standardize", image.get_shape())
-        image = tf.sub(image, SDC_MEAN)
-        image = tf.div(image, SDC_STD)
-    else:
-        print("Normalize [0, 1) -> [-1, 1)", image.get_shape())
-        image = tf.sub(image, 0.5)
-        image = tf.mul(image, 2.0)
-    return image
-
-
 def _random_hflip(image, uniform_random):
     """Randomly flip an image horizontally (left to right).
     """
@@ -80,7 +61,7 @@ def _random_hflip(image, uniform_random):
 def image_preprocess_sdc(
         image_buffer, camera_id,
         height, width, image_fmt='jpg',
-        standardize='fixed', train=False, summary_suffix='', thread_id=0):
+        normalize='global', train=False, summary_suffix='', thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -89,7 +70,7 @@ def image_preprocess_sdc(
       height: image target height
       width: image target width
       image_fmt: encode format of eimage
-      standardize: boolean, standardize to dataset mean/std deviation vs rescale
+      normalize: boolean, standardize to dataset mean/std deviation vs rescale
       train: boolean
       thread_id: integer indicating preprocessing thread
 
@@ -138,6 +119,6 @@ def image_preprocess_sdc(
     else:
         image = process_for_eval(image, height, width)
 
-    image = _standardize(image, method=standardize)
+    image = image_normalize(image, method=normalize, global_mean_std=SDC_MEAN_STD)
 
     return image, flip_coeff

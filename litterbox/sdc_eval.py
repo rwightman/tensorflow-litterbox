@@ -22,8 +22,17 @@ from feeds import FeedImagesWithLabels
 
 FLAGS = tf.app.flags.FLAGS
 
-tf.app.flags.DEFINE_string('subset', 'validation',
-                           """Either 'validation', 'train', 'test'""")
+tf.app.flags.DEFINE_string(
+    'subset', 'validation',
+    """Either 'validation', 'train', 'test'""")
+
+tf.app.flags.DEFINE_string(
+    'root_network', 'resnet_v1_50',
+    """Either resnet_v1_50, resnet_v1_101, resnet_v1_152, inception_resnet_v2, nvidia_sdc""")
+
+tf.app.flags.DEFINE_integer(
+    'top_version', 5,
+    """Top level network version, specifies output layer variations. See model code.""")
 
 
 class SdcData(DatasetRecord):
@@ -49,6 +58,7 @@ def main(_):
     processor = ProcessorSdc()
     #processor.mu_law_steering = True
     #processor.standardize_labels = False
+    processor.standardize_input = 'frame'
 
     feed = FeedImagesWithLabels(dataset=SdcData(), processor=processor)
 
@@ -67,8 +77,11 @@ def main(_):
         #'network': 'resnet_v1_101',  # 192x128
         #'version': 3,
 
-        'network': 'resnet_v1_50',
-        'version': 5,
+        #'network': 'resnet_v1_50',
+        #'version': 5,
+
+        'network': FLAGS.root_network,
+        'version': FLAGS.top_version,
     }
     model = ModelSdc(params=model_params)
 

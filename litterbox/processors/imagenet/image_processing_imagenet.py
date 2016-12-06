@@ -53,13 +53,10 @@ import numpy as np
 from fabric.image_processing_common import *
 
 
-IMAGENET_MEAN_CAFFE = [103.939, 116.779, 123.68]
-IMAGENET_MEAN = [0.485, 0.456, 0.406]
-IMAGENET_STD = [0.229, 0.224, 0.225]
-
-
 def image_preprocess_imagenet(
-        image_buffer, height, width, bbox=None, caffe_fmt=False, train=False, thread_id=0):
+        image_buffer,
+        height, width, bbox=None,
+        normalize=None, fmt='jpg', train=False, thread_id=0):
     """Decode and preprocess one image for evaluation or training.
 
     Args:
@@ -67,6 +64,7 @@ def image_preprocess_imagenet(
       bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
         where each coordinate is [0, 1) and the coordinates are arranged as
         [ymin, xmin, ymax, xmax].
+      normalize: standardization/normalization method for image data
       train: boolean
       thread_id: integer indicating preprocessing thread
 
@@ -79,7 +77,7 @@ def image_preprocess_imagenet(
     if not height or not width:
         raise ValueError('Please specify target image height & width.')
 
-    image = decode_compressed_image(image_buffer)
+    image = decode_compressed_image(image_buffer, image_fmt=fmt)
 
     if train:
         if bbox is None:
@@ -88,22 +86,4 @@ def image_preprocess_imagenet(
     else:
         image = process_for_eval(image, height, width)
 
-    if caffe_fmt:
-        # Rescale to [0, 255]
-        image = tf.mul(image, 255.0)
-        # Convert RGB to BGR
-        red, green, blue = tf.split(2, 3, image)
-        image = tf.concat(2, [
-            blue - IMAGENET_MEAN[0],
-            green - IMAGENET_MEAN[1],
-            red - IMAGENET_MEAN[2],
-            ])
-    else:
-        image = tf.sub(image, IMAGENET_MEAN)
-        image = tf.div(image, IMAGENET_STD)
-    #else:
-    #    # Rescale to [-1,1] instead of [0, 1)
-    #    image = tf.sub(image, 0.5)
-    #    image = tf.mul(image, 2.0)
-
-    return image
+    return image_normalize(image, method=normalize)
