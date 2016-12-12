@@ -87,7 +87,7 @@ def image_preprocess_sdc(
     else:
         # raw image pixels passed as 3D [H, W, C] tensor in RGB format
         image = image_buffer
-    assert len(image_buffer.get_shape()) == 3
+    assert len(image.get_shape()) == 3
 
     if train:
         left_string = tf.constant('left_camera', tf.string)
