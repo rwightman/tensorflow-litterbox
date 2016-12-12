@@ -71,7 +71,8 @@ class Model(object):
     # Return scopes (strings) for output variables to allow filtering for save/restore
     @abc.abstractmethod
     def output_scopes(self):
-        pass
+        assert False, 'abstract method not implemented'
+        return []
 
     # Return list of 'get/create variable' functions used by the model (used for variable scoping).
     # Makes it easier to abstract train code from models using different variable helpers
@@ -80,18 +81,26 @@ class Model(object):
 
     # Hook to let the model make variable name remapping decisions, especially helpful for
     # handling old or pretrained checkpoints that don't match all current variable names
-    def _remap_variable_names(self, variables, restore_outputs, checkpoint_variable_set):
+    def _remap_variable_names(self, variables, prefix_scope, checkpoint_variable_set):
         return variables
 
     # Return a list of model variables to restore for a Saver
-    def variables_to_restore(self, restore_outputs=True, checkpoint_variable_set=set()):
-        restore_variables = tf.contrib.framework.variables.get_model_variables()
+    def variables_to_restore(self, restore_outputs=True, prefix_scope='', checkpoint_variable_set=set()):
+        scope = prefix_scope if prefix_scope else None
+        restore_variables = tf.contrib.framework.variables.get_model_variables(scope=scope)
+        exclude_variables = self.output_scopes(prefix_scope=prefix_scope)
         if not restore_outputs:
             # Filter out variables in model output scopes by name if the outputs are not being restored
             model_variable_names = [x.op.name for x in restore_variables]
-            filtered_variables = tf.contrib.framework.variables.get_variables_to_restore(
-                model_variable_names,
-                self.output_scopes())
+            filtered_variables = []
+            for var in restore_variables:
+                excluded = False
+                for exclusion in exclude_variables:
+                    if var.op.name.startswith(exclusion):
+                        excluded = True
+                        break
+                if not excluded:
+                    filtered_variables.append(var)
             restore_variables = filtered_variables
             diff = set(model_variable_names).difference({x.op.name for x in restore_variables})
             if diff:
@@ -99,7 +108,7 @@ class Model(object):
                 [print(x) for x in diff]
 
         restore_variables = self._remap_variable_names(
-            restore_variables, restore_outputs, checkpoint_variable_set)
+            restore_variables, prefix_scope, checkpoint_variable_set)
 
         if checkpoint_variable_set:
             matched = {}

@@ -81,7 +81,13 @@ def image_preprocess_sdc(
         raise ValueError('Please specify target image height & width.')
 
     flip_coeff = tf.constant(1.0, dtype=tf.float32)
-    image = decode_compressed_image(image_buffer, image_fmt)
+    if image_buffer.dtype == tf.string:
+        # compressed image bytes passed as string
+        image = decode_compressed_image(image_buffer, image_fmt)
+    else:
+        # raw image pixels passed as 3D [H, W, C] tensor in RGB format
+        image = image_buffer
+    assert len(image_buffer.get_shape()) == 3
 
     if train:
         left_string = tf.constant('left_camera', tf.string)

@@ -75,8 +75,9 @@ class ModelSdc(fabric.model.Model):
             self.regression_loss = fabric.loss.loss_huber_with_aux
         else:
             self.regression_loss = fabric.loss.loss_mse_with_aux
+        self.disable_summaries = False
 
-    def build_tower(self, inputs, is_training=False, scope=None):
+    def build_tower(self, inputs, is_training=False, summaries=True, scope=None):
 
         with slim.arg_scope(arg_scope_map[self.network]()):
             output, endpoints = network_map[self.network](
@@ -99,7 +100,8 @@ class ModelSdc(fabric.model.Model):
         )
 
         # Add summaries for viewing model statistics on TensorBoard.
-        self.activation_summaries()
+        if summaries:
+            self.activation_summaries()
 
         return output
 
@@ -136,11 +138,29 @@ class ModelSdc(fabric.model.Model):
                 outputs[k] = processor.decode_output(v, key=k)
         return outputs
 
-    def output_scopes(self):
+    def _remap_variable_names(self, variables, prefix_scope='', checkpoint_variable_set=set()):
+
+        def _strip_name(prefix, name):
+            name = name[len(prefix):] if name.startswith(prefix) else name
+            return name
+
+        if prefix_scope:
+            # strip our network prefix scope and remap accordingly
+            prefix_scope += '/'
+            restore_variables = {_strip_name(prefix_scope, v.op.name): v for v in variables}
+            return restore_variables
+        else:
+            return variables
+
+    def output_scopes(self, prefix_scope=''):
         rel_scopes = ['logits', 'Logits', 'Output', 'Output/OutputXYZ', 'Output/OutputSteer', 'Output/Fc1',
                       'AuxLogits/OutputXYZ', 'AuxLogits/OutputSteer', 'AuxLogits/Fc1']
-        abs_scopes = [self.model_variable_scope + '/' + x for x in rel_scopes]
-        #abs_scopes = ['[\w]*/' + x for x in rel_scopes]
+        prefix = prefix_scope
+        if prefix:
+            prefix += '/'
+        prefix += self.model_variable_scope + '/'
+        print(prefix)
+        abs_scopes = [prefix + x for x in rel_scopes]
         return abs_scopes
 
     @staticmethod

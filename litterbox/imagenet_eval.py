@@ -42,7 +42,7 @@ tf.app.flags.DEFINE_integer(
 def main(_):
     util.check_tensorflow_version()
 
-    dataset = ImagenetData(subset=FLAGS.subset, background=True)
+    dataset = ImagenetData(subset=FLAGS.subset)
 
     processor = ProcessorImagenet()
     processor.label_offset = FLAGS.label_offset
@@ -50,7 +50,7 @@ def main(_):
     feed = FeedImagesWithLabels(dataset=dataset, processor=processor)
 
     model_params = {
-        'num_classes': dataset.num_classes_with_background(),
+        'num_classes': feed.num_classes_for_network(),
         'network': FLAGS.network,
     }
 
@@ -60,6 +60,7 @@ def main(_):
     else:
         # Google's tf.slim models
         model = ModelGoogleSlim(params=model_params)
+        model.check_norm(processor.normalize)
 
     exec_eval.evaluate(feed=feed, model=model)
 

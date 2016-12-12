@@ -23,7 +23,7 @@ class ImagenetData(DatasetRecord):
         self.has_background_class = background
 
     def num_classes(self):
-        return 1000
+        return 1001
 
     def num_examples_per_epoch(self):
         """Returns the number of examples in the data subset."""

@@ -30,11 +30,7 @@ tf.app.flags.DEFINE_boolean(
     """Set true to output per-class softmax output probabilities instead of class id.""")
 
 tf.app.flags.DEFINE_integer(
-    'num_classes', 1000,
-    """Number of class labels""")
-
-tf.app.flags.DEFINE_boolean(
-    'background_class', True,
+    'num_classes', 1001,
     """Number of class labels""")
 
 tf.app.flags.DEFINE_integer(
@@ -49,12 +45,12 @@ tf.app.flags.DEFINE_string(
     'network', 'resnet_v1_50',
     """See models/google/nets/nets_factory.py or models/my_slim/nets_factory.py""")
 
+
 class ExampleData(DatasetFile):
     # Example dataset for feeding folder of images into model
 
     def __init__(self, subset):
         super(ExampleData, self).__init__('Example', subset)
-        self.has_background_class = FLAGS.background_class
 
     def num_classes(self):
         return FLAGS.num_classes
@@ -71,7 +67,7 @@ def main(_):
     feed = FeedImagesWithLabels(dataset=dataset, processor=processor)
 
     model_params = {
-        'num_classes': dataset.num_classes_with_background(),
+        'num_classes': feed.num_classes_for_network(),
         'network': FLAGS.network,
     }
     if FLAGS.my:
@@ -80,6 +76,7 @@ def main(_):
     else:
         # Google's tf.slim models
         model = ModelGoogleSlim(params=model_params)
+        model.check_norm(processor.normalize)
 
     output, num_entries = exec_predict.predict(feed, model)
 
@@ -92,6 +89,7 @@ def main(_):
         output_columns += class_labels
         output = np.vstack([np.column_stack([o[1], o[0]]) for o in output])
     else:
+        # Dump class index to CSV file
         output_columns += ['Class']
         output = np.vstack([np.column_stack([o[1], np.argmax(o[0], axis=1)]) for o in output])
 

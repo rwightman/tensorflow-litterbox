@@ -42,9 +42,17 @@ class Processor(object):
         pass
 
     @abc.abstractmethod
+    def get_input_shape(self, batch_size):
+        pass
+
+    @abc.abstractmethod
     def parse_example(self, serialized_example):
         pass
 
     @abc.abstractmethod
-    def process_example(self, data, mode):
+    def process_example(self, tensors, mode, thread_id):
+        pass
+
+    @abc.abstractmethod
+    def reshape_batch(self, batch_tensors, batch_size, num_splits):
         pass

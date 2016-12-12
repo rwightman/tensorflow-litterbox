@@ -46,7 +46,7 @@ tf.app.flags.DEFINE_integer('image_size', 299,
                             """Provide square images of this size.""")
 tf.app.flags.DEFINE_float('image_aspect', 0.0,
                           """Aspect ratio based sizing, square image_size*image_size if 0""")
-tf.app.flags.DEFINE_string('image_norm', '',
+tf.app.flags.DEFINE_string('image_norm', 'default',
                            """Either 'caffe' BGR [0,255], 'caffe_rgb' [0, 255],
                            'frame' per-frame standardize, 'global' standardize, 'default' [-1, 1].""")
 tf.app.flags.DEFINE_string('image_fmt', 'jpg',

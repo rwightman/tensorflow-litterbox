@@ -209,7 +209,7 @@ def build_inception_resnet_sdc_regression(
                 print('Fc1', net.get_shape())
                 net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
                 net = slim.conv2d(net, 768, 1, activation_fn=tf.nn.elu, scope='Fc2')
-                net = tf.squeeze(net)
+                net = tf.squeeze(net, squeeze_dims=[1, 2])
                 print('Fc2', net.get_shape())
             elif version == 2:
                 net = slim.flatten(net)

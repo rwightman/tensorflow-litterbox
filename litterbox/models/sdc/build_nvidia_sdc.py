@@ -50,7 +50,7 @@ def build_nvidia_sdc(
                 print(net.get_shape())
                 net = slim.conv2d(net, 72, 1, scope='Fc3')
                 print(net.get_shape())
-                net = tf.squeeze(net)
+                net = tf.squeeze(net, squeeze_dims=[1, 2])
             else:
                 net = slim.conv2d(net, 1280, net.get_shape()[1:3], scope='Fc1')
                 net = slim.dropout(net, dropout_keep_prob, scope='Dropout1')
@@ -62,7 +62,7 @@ def build_nvidia_sdc(
                 print(net.get_shape())
                 net = slim.conv2d(net, 10, 1, scope='Fc4')
                 print(net.get_shape())
-                net = tf.squeeze(net)
+                net = tf.squeeze(net, squeeze_dims=[1, 2])
 
             assert 'steer' in output_cfg
             output = {'steer': slim.fully_connected(

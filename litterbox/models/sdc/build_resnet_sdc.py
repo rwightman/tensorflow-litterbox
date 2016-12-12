@@ -348,7 +348,7 @@ def _build_output(
                 net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout')
                 net = slim.conv2d(net, 1024, 1, scope='Fc2')
                 print('Fc2', net.get_shape())
-                net = tf.squeeze(net)
+                net = tf.squeeze(net, squeeze_dims=[1, 2])
         elif version == 5:
             # Version 5, add extra FC layer and support for siamese conv
             do_dropout = bayesian or is_training
@@ -367,7 +367,7 @@ def _build_output(
                 print('Fc2', net.get_shape())
                 net = slim.conv2d(net, 512, 1, scope='Fc3')
                 print('Fc3', net.get_shape())
-                net = tf.squeeze(net)
+                net = tf.squeeze(net, squeeze_dims=[1, 2])
         elif version == 6:
             # Version 6 used for multi-resolution feature map experiment
             assert len(nets) == 2
@@ -387,8 +387,9 @@ def _build_output(
                 print('Fc2', net.get_shape())
                 net = slim.conv2d(net, 512, 1, scope='Fc3')
                 print('Fc3', net.get_shape())
-                net = tf.squeeze(net)
+                net = tf.squeeze(net, squeeze_dims=[1, 2])
 
+        print('Pre-output', net.get_shape())
         output = {}
         if 'xyz' in output_cfg:
             output['xyz'] = slim.fully_connected(

@@ -28,25 +28,38 @@ GPS_STD = [0.2, 0.2]  # approx
 
 class ProcessorSdc(fabric.Processor):
 
-    def __init__(self):
+    def __init__(self, params={}):
         super(ProcessorSdc, self).__init__()
 
+        image_aspect = params['image_aspect'] if 'image_aspect' in params else FLAGS.image_aspect
+        image_size = params['image_size'] if 'image_size' in  params else FLAGS.image_size
+        image_fmt = params['image_fmt'] if 'image_fmt' in params else FLAGS.image_fmt
+        image_norm = params['image_norm'] if 'image_norm' in params else FLAGS.image_norm
+
         # For aspect based image size, short edge set to FLAGS.image_size
-        if FLAGS.image_aspect == 0.0 or FLAGS.image_aspect == 1.0:
-            self.width = FLAGS.image_size
-            self.height = FLAGS.image_size
-        elif FLAGS.image_aspect < 1.0:
-            self.width = math.floor(FLAGS.image_size * FLAGS.image_aspect)
-            self.height = FLAGS.image_size
+        if image_aspect == 0.0 or image_aspect == 1.0:
+            self.width = image_size
+            self.height = image_size
+        elif image_aspect < 1.0:
+            self.width = math.floor(image_size * image_aspect)
+            self.height = image_size
         else:
-            self.width = FLAGS.image_size
-            self.height = math.floor(FLAGS.image_size / FLAGS.image_aspect)
-        self.image_fmt = FLAGS.image_fmt
+            self.width = image_size
+            self.height = math.floor(image_size / image_aspect)
+        self.image_fmt = image_fmt
         self.depth = 3
-        self.standardize_input = 'global'
+        self.standardize_input = image_norm
         self.standardize_labels = True
         self.mu_law_steering = False
         self.num_input_images = 1
+
+    def get_input_shape(self, batch_size=0):
+        shape = [self.height, self.width, self.depth]
+        if self.num_input_images > 1:
+            shape = [self.num_input_images] + shape
+        if batch_size:
+            shape = [batch_size] + shape
+        return shape
 
     def parse_example(self, serialized_example):
         parsed = parse_proto_sdc(serialized_example)

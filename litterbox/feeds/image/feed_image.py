@@ -65,9 +65,15 @@ class FeedImagesWithLabels(fabric.Feed):
             sample=sample, num_preprocess_threads=num_preprocess_threads,
             num_readers=num_readers)
 
-    def num_classes(self, with_background=False):
-        return self.dataset.num_classes_with_background() if with_background \
-            else self.dataset.num_classes()
+    def num_classes_for_network(self, offset=0):
+        """ Return number of classes for use in the network.
+        Number of classes required for building/using the network should include background class
+        of dataset plus any additional offset value specified.
+        :param offset:
+        :return:
+        """
+        num_classes = self.dataset.num_classes()
+        return (num_classes - offset) if offset else (num_classes - self.processor.label_offset)
 
     def _batch_inputs_record(self, mode):
         """Construct batches of training or evaluation examples from the image dataset.

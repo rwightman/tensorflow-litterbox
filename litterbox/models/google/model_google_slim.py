@@ -108,3 +108,10 @@ class ModelGoogleSlim(model.Model):
         loss_op = tf.nn.sparse_softmax_cross_entropy_with_logits(logits, labels, name='xentropy_eval')
         return OrderedDict([('top 5', top_5_op), ('top 1', top_1_op), ('loss', loss_op)])
 
+    def check_norm(self, norm):
+        if ('vgg' in self.network or 'resnet' in self.network) and norm != 'caffe_rgb':
+            print("WARNING: If you are using the pre-trained weights for Google VGG and Resnet models, "
+                  "they were imported from Caffe and expect [0, 255] inputs, not the  default [-1, 1]. "
+                  "It is recommended to change the image norm method from '%s' to 'caffe_rgb' with "
+                  "the --image_norm param." % norm)
+
