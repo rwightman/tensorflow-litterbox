@@ -4,3 +4,4 @@ output/
 log/
 __pycache__/
 *.py[cod]
+*.csv

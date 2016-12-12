@@ -117,6 +117,7 @@ def resnet_v1(inputs,
               num_classes=None,
               is_training=True,
               global_pool=True,
+              spatial_squeeze=True,
               output_stride=None,
               include_root_block=True,
               reuse=None,
@@ -197,8 +198,10 @@ def resnet_v1(inputs,
         if num_classes is not None:
           net = slim.conv2d(net, num_classes, [1, 1], activation_fn=None,
                             normalizer_fn=None, scope='logits')
+          if spatial_squeeze:
+              net = tf.squeeze(net, [1, 2], name='spatial_squeeze')
         # Convert end_points_collection into a dictionary of end_points.
-        end_points = dict(tf.get_collection(end_points_collection))
+        end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         if num_classes is not None:
           end_points['predictions'] = slim.softmax(net, scope='predictions')
         return net, end_points

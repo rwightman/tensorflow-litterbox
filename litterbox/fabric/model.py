@@ -15,14 +15,21 @@ from __future__ import print_function
 import tensorflow as tf
 import abc
 import re
+from copy import deepcopy
+
+
+def merge_params(default, args):
+    params = deepcopy(default)
+    params.update(args)
+    return params
 
 
 class ModelTower(object):
-    def __init__(self, name, endpoints, logits, aux_logits=None):
+    def __init__(self, name, endpoints, outputs, aux_outputs=None):
         self.name = name
         self.endpoints = endpoints
-        self.logits = logits
-        self.aux_logits = aux_logits
+        self.outputs = outputs
+        self.aux_outputs = aux_outputs
 
 
 class Model(object):
@@ -34,16 +41,16 @@ class Model(object):
     TOWER_PREFIX = 'tower'
 
     def __init__(self):
-        self.model_scope = None
+        self.model_variable_scope = None
         self._last_tower = None
         self._towers = {}
 
-    def add_tower(self, name, endpoints, logits, aux_logits=None):
+    def add_tower(self, name, endpoints, outputs, aux_outputs=None):
         self._last_tower = ModelTower(
             name,
             endpoints,
-            logits,
-            aux_logits
+            outputs,
+            aux_outputs
         )
         self._towers[name] = self._last_tower
 
@@ -61,31 +68,84 @@ class Model(object):
     def last_scope(self):
         return self._last_tower.name if self._last_tower else ''
 
-    # Return scopes (strings) for logit variables to allow filtering for save/restore
+    # Return scopes (strings) for output variables to allow filtering for save/restore
     @abc.abstractmethod
-    def logit_scopes(self):
-        pass
+    def output_scopes(self):
+        assert False, 'abstract method not implemented'
+        return []
 
     # Return list of 'get/create variable' functions used by the model (used for variable scoping).
     # Makes it easier to abstract train code from models using different variable helpers
     def get_variable_fns(self):
         return [tf.contrib.framework.variable]
 
+    # Hook to let the model make variable name remapping decisions, especially helpful for
+    # handling old or pretrained checkpoints that don't match all current variable names
+    def _remap_variable_names(self, variables, prefix_scope, checkpoint_variable_set):
+        return variables
+
     # Return a list of model variables to restore for a Saver
-    def variables_to_restore(self, restore_logits=True):
-        model_variables = tf.contrib.framework.variables.get_model_variables()
-        if restore_logits:
-            return model_variables
-        else:
-            model_variable_names = [x.name for x in model_variables]
-            filtered_variables = tf.contrib.framework.variables.get_variables_to_restore(
-                model_variable_names, self.logit_scopes())
-            return filtered_variables
+    def variables_to_restore(self, restore_outputs=True, prefix_scope='', checkpoint_variable_set=set()):
+        scope = prefix_scope if prefix_scope else None
+        restore_variables = tf.contrib.framework.variables.get_model_variables(scope=scope)
+        exclude_variables = self.output_scopes(prefix_scope=prefix_scope)
+        if not restore_outputs:
+            # Filter out variables in model output scopes by name if the outputs are not being restored
+            model_variable_names = [x.op.name for x in restore_variables]
+            filtered_variables = []
+            for var in restore_variables:
+                excluded = False
+                for exclusion in exclude_variables:
+                    if var.op.name.startswith(exclusion):
+                        excluded = True
+                        break
+                if not excluded:
+                    filtered_variables.append(var)
+            restore_variables = filtered_variables
+            diff = set(model_variable_names).difference({x.op.name for x in restore_variables})
+            if diff:
+                print('INFO: %d variables were explicitly omitted from restore.' % len(diff))
+                [print(x) for x in diff]
+
+        restore_variables = self._remap_variable_names(
+            restore_variables, prefix_scope, checkpoint_variable_set)
+
+        if checkpoint_variable_set:
+            matched = {}
+            missing = []
+            if isinstance(restore_variables, dict):
+                for name, var in restore_variables.items():
+                    if name in checkpoint_variable_set:
+                        matched[name] = var
+                    else:
+                        missing += [name]
+            else:
+                for var in restore_variables:
+                    if var.op.name in checkpoint_variable_set:
+                        matched[var.op.name] = var
+                    else:
+                        missing += [var.op.name]
+            if missing:
+                print("WARNING: %d variables could not be found in checkpoint file that were not explicitly "
+                      "omitted. Using default initialization." % len(missing))
+                [print(x) for x in missing if not x.endswith('/Momentum')]
+            restore_variables = matched
+
+        return restore_variables
 
     def activation_summaries(self, tower_name=None):
         tower = self.tower(tower_name)
         with tf.name_scope('summaries'):
-            act_ops = {x: x.op.name for x in tower.endpoints.values()}
+            act_ops = {}
+            for x in tower.endpoints.values():
+                if isinstance(x, dict):
+                    for y in x.values():
+                        act_ops[y] = y.op.name
+                elif isinstance(x, list):
+                    for y in x:
+                        act_ops[y] = y.op.name
+                else:
+                    act_ops[x] = x.op.name
             for endpoint, op_name in act_ops.items():
                 # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
                 # session. This helps the clarity of presentation on tensorboard.
@@ -94,10 +154,11 @@ class Model(object):
                 tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(endpoint))
 
     def strip_common_scope(self, input_name):
-        if self.model_scope:
-            output_name = re.sub('(%s_[0-9]*/)?%s/' % (self.TOWER_PREFIX, self.model_scope), '', input_name)
-        else:
-            output_name = re.sub('%s_[0-9]*/' % self.TOWER_PREFIX, '', input_name)
+        # strip tower scope, present in ops
+        output_name = re.sub('%s_[0-9]*/' % self.TOWER_PREFIX, '', input_name)
+        # strip extra model variable scope, present in ops and variables
+        if self.model_variable_scope:
+            output_name = re.sub('%s/' % self.model_variable_scope, '', output_name)
         return output_name
 
 

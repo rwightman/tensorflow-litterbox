@@ -50,13 +50,9 @@ class Dataset(object):
         self.is_record = is_record
         self.has_background_class = False
 
-    @abstractmethod
     def num_classes(self):
         """Returns the number of classes in the data set."""
         return 0
-
-    def num_classes_with_background(self):
-        return self.num_classes() + 1 if self.has_background_class else self.num_classes()
 
     def available_subsets(self):
         """Returns the list of available subsets."""

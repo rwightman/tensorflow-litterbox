@@ -31,12 +31,10 @@ import time
 from datetime import datetime
 
 import numpy as np
-import os.path
 import tensorflow as tf
 
-from fabric.image_processing import image_preprocess
-from fabric.feed import Feed
 from fabric import util
+from fabric.feed import Feed
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -63,15 +61,13 @@ tf.app.flags.DEFINE_float(
     'If left as None, then moving averages are not used.')
 
 
-def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary_op):
+def _eval_once(feed, saver, summary_writer, eval_ops, summary_op):
     """Runs Eval once.
 
     Args:
       saver: Saver.
       summary_writer: Summary writer.
-      top_1_op: Top 1 op.
-      top_5_op: Top 5 op.
-      loss_op: Cross entropy loss op.
+      eval_ops: dict of evaluation metric ops
       summary_op: Summary op.
     """
     with tf.Session() as sess:
@@ -92,43 +88,55 @@ def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary
             for qr in tf.get_collection(tf.GraphKeys.QUEUE_RUNNERS):
                 threads.extend(qr.create_threads(sess, coord=coord, daemon=True, start=True))
 
+            eval_ops_list = []
+            eval_names_list = []
+            if isinstance(eval_ops, dict):
+                for name, op in eval_ops.items():
+                    eval_ops_list.append(op)
+                    eval_names_list.append(name)
+            else:
+                assert isinstance(eval_ops, list)
+                eval_ops_list = eval_ops
+                for op in eval_ops:
+                    eval_names_list.append(op.name)
+
             num_examples = feed.num_examples_per_epoch()
             num_iter = int(math.ceil(num_examples / feed.batch_size))
-            # Counts the number of correct predictions.
-            count_top_1 = 0.0
-            count_top_5 = 0.0
-            count_loss = 0.0
-            total_sample_count = num_iter * feed.batch_size
+            eval_totals = [np.float64(0.0)] * len(eval_ops_list)
+            example_count = 0
             step = 0
-
             print('%s: starting evaluation on (%s).' % (datetime.now(), feed.dataset.subset))
             start_time = time.time()
-            while step < num_iter and not coord.should_stop():
-                top_1, top_5, loss = sess.run([top_1_op, top_5_op, loss_op])
-                count_top_1 += np.sum(top_1)
-                count_top_5 += np.sum(top_5)
-                count_loss += loss
-                step += 1
-                if step % 20 == 0:
-                    duration = time.time() - start_time
-                    sec_per_batch = duration / 20.0
-                    examples_per_sec = feed.batch_size / sec_per_batch
-                    print('%s: [%d batches out of %d] (%.1f examples/sec; %.3f sec/batch)'
-                          % (datetime.now(), step, num_iter, examples_per_sec, sec_per_batch))
-                    start_time = time.time()
+            try:
+                while step < num_iter and not coord.should_stop():
+                    eval_results = sess.run(eval_ops_list)
+                    remaining_count = num_examples - example_count
+                    example_count += min(feed.batch_size, remaining_count)
 
-            # Compute precision @ 1.
-            precision_at_1 = 100 * count_top_1 / total_sample_count
-            recall_at_5 = 100 * count_top_5 / total_sample_count
-            loss = count_loss / num_iter
-            print('%s: precision @ 1 = %.4f, recall @ 5 = %.4f, loss = %.4f [%d examples]' %
-                  (datetime.now(), precision_at_1, recall_at_5, loss, total_sample_count))
+                    for i, result in enumerate(eval_results):
+                        if remaining_count < feed.batch_size:
+                            result = result[:remaining_count]
+                        eval_totals[i] += np.sum(result, dtype=np.float64)
+                    step += 1
+
+                    if step % 20 == 0:
+                        duration = time.time() - start_time
+                        sec_per_batch = duration / 20.0
+                        examples_per_sec = feed.batch_size / sec_per_batch
+                        print('%s: [%d batches out of %d] (%.1f examples/sec; %.3f sec/batch)'
+                              % (datetime.now(), step, num_iter, examples_per_sec, sec_per_batch))
+                        start_time = time.time()
+            except KeyboardInterrupt:
+                pass
 
             summary = tf.Summary()
             summary.ParseFromString(sess.run(summary_op))
-            summary.value.add(tag='Precision @ 1', simple_value=precision_at_1)
-            summary.value.add(tag='Recall @ 5', simple_value=recall_at_5)
-            summary.value.add(tag='Loss', simple_value=loss)
+            print('%s:' % datetime.now(), end=" ")
+            for i, val in enumerate(eval_totals):
+                mean_val = val / example_count
+                print('%s = %.6f' % (eval_names_list[i], mean_val), end=" ")
+                summary.value.add(tag=eval_names_list[i], simple_value=mean_val)
+            print('[%d examples]' % example_count)
             summary_writer.add_summary(summary, global_step)
 
         except Exception as e:  # pylint: disable=broad-except
@@ -138,31 +146,24 @@ def _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary
         coord.join(threads, stop_grace_period_secs=10)
 
 
-def evaluate(dataset, model):
+def evaluate(feed, model):
     """Evaluate model on Dataset for a number of steps."""
 
-    assert dataset.data_files()
     if tf.gfile.Exists(FLAGS.eval_dir):
         tf.gfile.DeleteRecursively(FLAGS.eval_dir)
     tf.gfile.MakeDirs(FLAGS.eval_dir)
 
     with tf.Graph().as_default():
-        # Number of classes in the Dataset label set plus 1.
-        # Label 0 is reserved for an (unused) background class.
-        num_classes = dataset.num_classes_with_background()
 
-        # Get images and labels from the dataset.
-        feed = Feed(dataset, image_preprocess, batch_size=FLAGS.batch_size)
-        images, labels, _ = feed.inputs()
+        # Get images and labels examples
+        inputs, labels = feed.inputs_for_eval()
 
         # Build a Graph that computes the logits predictions from the
         # inference model.
-        logits = model.build_tower(images, num_classes)
+        outputs = model.build_tower(inputs)
 
         # Calculate predictions.
-        top_1_op = tf.nn.in_top_k(logits, labels, 1)
-        top_5_op = tf.nn.in_top_k(logits, labels, 5)
-        loss_op = model.eval_loss_op(logits, labels)
+        eval_ops = model.eval_ops(outputs, labels, processor=feed.processor)
 
         # Restore the moving average version of the learned variables for eval.
         if FLAGS.moving_average_decay:
@@ -178,7 +179,7 @@ def evaluate(dataset, model):
         summary_writer = tf.train.SummaryWriter(FLAGS.eval_dir, graph=tf.get_default_graph())
 
         while True:
-            _eval_once(feed, saver, summary_writer, top_1_op, top_5_op, loss_op, summary_op)
+            _eval_once(feed, saver, summary_writer, eval_ops, summary_op)
             if FLAGS.run_once:
                 break
             time.sleep(FLAGS.eval_interval_secs)

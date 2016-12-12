@@ -19,8 +19,8 @@ from tensorflow.contrib.framework import arg_scope
 from tensorflow.contrib import layers
 
 
-def block_stem(net, endpoints, scope='Stem'):
-    # Stem shared by inception-v4 and inception-resnet-v2 (resnet-v1 uses simpler stem below)
+def _block_stem(net, endpoints, scope='Stem'):
+    # Stem shared by inception-v4 and inception-resnet-v2 (resnet-v1 uses simpler _stem below)
     # NOTE observe endpoints of first 3 layers
     with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='VALID'):
         with tf.variable_scope(scope):
@@ -63,7 +63,7 @@ def block_stem(net, endpoints, scope='Stem'):
     return net
 
 
-def block_a(net, scope='BlockA'):
+def _block_a(net, scope='BlockA'):
     # 35 x 35 x 384 grid
     # default padding = SAME
     # default stride = 1
@@ -85,7 +85,7 @@ def block_a(net, scope='BlockA'):
     return net
 
 
-def block_a_reduce(net, endpoints, k=192, l=224, m=256, n=384, scope='BlockReduceA'):
+def _block_a_reduce(net, endpoints, k=192, l=224, m=256, n=384, scope='BlockReduceA'):
     # 35 x 35 -> 17 x 17 reduce
     # inception-v4: k=192, l=224, m=256, n=384
     # inception-resnet-v1: k=192, l=192, m=256, n=384
@@ -115,7 +115,7 @@ def block_a_reduce(net, endpoints, k=192, l=224, m=256, n=384, scope='BlockReduc
     return net
 
 
-def block_b(net, scope='BlockB'):
+def _block_b(net, scope='BlockB'):
     # 17 x 17 x 1024 grid
     # default padding = SAME
     # default stride = 1
@@ -140,7 +140,7 @@ def block_b(net, scope='BlockB'):
     return net
 
 
-def block_b_reduce(net, endpoints, scope='BlockReduceB'):
+def _block_b_reduce(net, endpoints, scope='BlockReduceB'):
     # 17 x 17 -> 8 x 8 reduce
     with arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], padding='VALID'):
         with tf.variable_scope(scope):
@@ -160,7 +160,7 @@ def block_b_reduce(net, endpoints, scope='BlockReduceB'):
     return net
 
 
-def block_c(net, scope='BlockC'):
+def _block_c(net, scope='BlockC'):
     # 8 x 8 x 1536 grid
     # default padding = SAME
     # default stride = 1
@@ -185,8 +185,8 @@ def block_c(net, scope='BlockC'):
     return net
 
 
-def block_stem_res(net, endpoints, scope='Stem'):
-    # Simpler stem for inception-resnet-v1 network
+def _block_stem_res(net, endpoints, scope='Stem'):
+    # Simpler _stem for inception-resnet-v1 network
     # NOTE observe endpoints of first 3 layers
     # default padding = VALID
     # default stride = 1
@@ -215,7 +215,7 @@ def block_stem_res(net, endpoints, scope='Stem'):
     return net
 
 
-def block_a_res(net, ver=2, res_scale=None, scope='BlockA', activation_fn=tf.nn.relu):
+def _block_a_res(net, ver=2, res_scale=None, scope='BlockA', activation_fn=tf.nn.relu):
     # 35x35 grid
 
     # configure branch filter numbers
@@ -247,7 +247,7 @@ def block_a_res(net, ver=2, res_scale=None, scope='BlockA', activation_fn=tf.nn.
     return net
 
 
-def block_b_res(net, ver=2, res_scale=None, scope='BlockB', activation_fn=tf.nn.relu):
+def _block_b_res(net, ver=2, res_scale=None, scope='BlockB', activation_fn=tf.nn.relu):
     # 17 x 17 grid
 
     # configure branch filter numbers
@@ -279,7 +279,7 @@ def block_b_res(net, ver=2, res_scale=None, scope='BlockB', activation_fn=tf.nn.
     return net
 
 
-def block_b_reduce_res(net, endpoints, ver=2, scope='BlockReduceB'):
+def _block_b_reduce_res(net, endpoints, ver=2, scope='BlockReduceB'):
     # 17 x 17 -> 8 x 8 reduce
 
     # configure branch filter numbers
@@ -313,7 +313,7 @@ def block_b_reduce_res(net, endpoints, ver=2, scope='BlockReduceB'):
     return net
 
 
-def block_c_res(net, ver=2, res_scale=None, scope='BlockC', activation_fn=tf.nn.relu):
+def _block_c_res(net, ver=2, res_scale=None, scope='BlockC', activation_fn=tf.nn.relu):
     # 8 x 8 grid
 
     # configure branch filter numbers
@@ -342,7 +342,7 @@ def block_c_res(net, ver=2, res_scale=None, scope='BlockC', activation_fn=tf.nn.
     return net
 
 
-def block_output(net, endpoints, num_classes=1000, dropout_keep_prob=0.5, scope='Output'):
+def _block_output(net, endpoints, num_classes=1000, dropout_keep_prob=0.5, scope='Output'):
     with tf.variable_scope(scope):
         # 8 x 8 x 1536
         shape = net.get_shape()
@@ -358,7 +358,7 @@ def block_output(net, endpoints, num_classes=1000, dropout_keep_prob=0.5, scope=
     return net
 
 
-def stack(net, endpoints, fn=None, count=1, **kwargs):
+def _stack(net, endpoints, fn=None, count=1, **kwargs):
     scope = kwargs.pop('scope')
     for i in range(count):
         block_scope = '%s%d' % (scope, (i+1))
@@ -369,7 +369,7 @@ def stack(net, endpoints, fn=None, count=1, **kwargs):
     return net
 
 
-def build_inception_v4(
+def _build_inception_v4(
         inputs,
         stack_counts=[4, 7, 3],
         dropout_keep_prob=0.8,
@@ -386,7 +386,7 @@ def build_inception_v4(
       scope: Optional scope for op_scope.
 
     Returns:
-      a list containing 'logits', 'aux_logits' Tensors.
+      a list containing 'logits' Tensors and a dict of Endpoints.
     """
     # endpoints will collect relevant activations for external use, for example, summaries or losses.
     endpoints = {}
@@ -395,33 +395,32 @@ def build_inception_v4(
     arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME')
     with name_scope_net, arg_scope_train, arg_scope_conv:
 
-        net = block_stem(inputs, endpoints)
+        net = _block_stem(inputs, endpoints)
         # 35 x 35 x 384
 
         with tf.variable_scope('Scale1'):
-            net = stack(net, endpoints, fn=block_a, count=stack_counts[0], scope='BlockA')
+            net = _stack(net, endpoints, fn=_block_a, count=stack_counts[0], scope='BlockA')
             # 35 x 35 x 384
 
         with tf.variable_scope('Scale2'):
-            net = block_a_reduce(net, endpoints)
+            net = _block_a_reduce(net, endpoints)
             # 17 x 17 x 1024
-            net = stack(net, endpoints, fn=block_b, count=stack_counts[1], scope='BlockB')
+            net = _stack(net, endpoints, fn=_block_b, count=stack_counts[1], scope='BlockB')
             # 17 x 17 x 1024
 
         with tf.variable_scope('Scale3'):
-            net = block_b_reduce(net, endpoints)
+            net = _block_b_reduce(net, endpoints)
             # 8 x 8 x 1536
-            net = stack(net, endpoints, fn=block_c, count=stack_counts[2], scope='BlockC')
+            net = _stack(net, endpoints, fn=_block_c, count=stack_counts[2], scope='BlockC')
             # 8 x 8 x 1536
 
-        logits = block_output(net, endpoints, num_classes, dropout_keep_prob, scope='Output')
-        # num_classes
+        logits = _block_output(net, endpoints, num_classes, dropout_keep_prob, scope='Output')
         endpoints['Predictions'] = tf.nn.softmax(logits, name='Predictions')
 
         return logits, endpoints
 
 
-def build_inception_resnet(
+def _build_inception_resnet(
         inputs,
         stack_counts=[5, 10, 5],
         ver=2,
@@ -455,36 +454,126 @@ def build_inception_resnet(
     arg_scope_conv = arg_scope([layers.conv2d, layers.max_pool2d, layers.avg_pool2d], stride=1, padding='SAME')
     with name_scope_net, arg_scope_train, arg_scope_conv:
 
-        net = block_stem_res(inputs, endpoints) if ver == 1 else block_stem(inputs, endpoints)
+        net = _block_stem_res(inputs, endpoints) if ver == 1 else _block_stem(inputs, endpoints)
         # 35 x 35 x 384 (v2)
 
         with tf.variable_scope('Scale1'):
-            net = stack(
-                net, endpoints, fn=block_a_res, count=stack_counts[0], scope='BlockA',
+            net = _stack(
+                net, endpoints, fn=_block_a_res, count=stack_counts[0], scope='BlockA',
                 ver=ver, res_scale=res_scale, activation_fn=activation_fn)
             # 35 x 35 x 384
 
         with tf.variable_scope('Scale2'):
             k, l, m, n = (192, 192, 256, 384) if ver == 1 else (256, 256, 384, 384)
-            net = block_a_reduce(net, endpoints, k=k, l=l, m=m, n=n)
+            net = _block_a_reduce(net, endpoints, k=k, l=l, m=m, n=n)
             # 17 x 17 x 896 v1, 1152 v2
 
-            net = stack(
-                net, endpoints, fn=block_b_res, count=stack_counts[1], scope='BlockB',
+            net = _stack(
+                net, endpoints, fn=_block_b_res, count=stack_counts[1], scope='BlockB',
                 ver=ver, res_scale=res_scale, activation_fn=activation_fn)
             # 17 x 17 x 896 v1, 1152 v2
 
         with tf.variable_scope('Scale3'):
-            net = block_b_reduce_res(net, endpoints, ver=ver)
+            net = _block_b_reduce_res(net, endpoints, ver=ver)
             # 8 x 8 x 1792 v1, 2144 v2
 
-            net = stack(
-                net, endpoints, fn=block_c_res, count=stack_counts[2], scope='BlockC',
+            net = _stack(
+                net, endpoints, fn=_block_c_res, count=stack_counts[2], scope='BlockC',
                 ver=ver, res_scale=res_scale, activation_fn=activation_fn)
             # 8 x 8 x 1792 v1, 2144 v2
 
-        logits = block_output(net, endpoints, num_classes, dropout_keep_prob, 'Output')
-        # num_classes
+        logits = _block_output(net, endpoints, num_classes, dropout_keep_prob, 'Output')
         endpoints['Predictions'] = tf.nn.softmax(logits, name='Predictions')
+
+        return logits, endpoints
+
+
+def params_inception(version=4, residual=False):
+    params = {
+        'version': version,
+        'residual': residual,
+        'dropout_keep_prob': 0.8,
+        'residual_scale': 0.67,
+    }
+    return params
+
+
+def inception_arg_scope(
+        weight_decay=0.00004,
+        use_batch_norm=True,
+        batch_norm_decay=0.9997,
+        batch_norm_epsilon=0.001,
+):
+    # Parameters for BatchNorm.
+    batch_norm_params = {
+        # Decay for the moving averages.
+        'decay': batch_norm_decay,
+        # epsilon to prevent 0s in variance.
+        'epsilon': batch_norm_epsilon,
+    }
+    if use_batch_norm:
+        normalizer_fn = layers.batch_norm
+        normalizer_params = batch_norm_params
+    else:
+        normalizer_fn = None
+        normalizer_params = {}
+    # Set weight_decay for weights in Conv and FC layers.
+    l2_regularizer = layers.l2_regularizer(weight_decay)
+    activation_fn = tf.nn.relu  # tf.nn.elu
+
+    arg_scope_weights = arg_scope(
+        [layers.conv2d, layers.fully_connected],
+        weights_initializer=layers.variance_scaling_initializer(factor=1.0),
+        weights_regularizer=l2_regularizer
+    )
+    arg_scope_conv = arg_scope(
+        [layers.conv2d],
+        activation_fn=activation_fn,
+        normalizer_fn=normalizer_fn,
+        normalizer_params=normalizer_params
+    )
+    with arg_scope_weights, arg_scope_conv as arg_sc:
+        return arg_sc
+
+
+def build_inception(
+        inputs,
+        num_classes=1000,
+        params=params_inception(),
+        is_training=True,
+        scope=''
+):
+    """Build Inception v4 architectures.
+    See here for reference: http://arxiv.org/pdf/1602.07261v1.pdf
+    """
+    residual = params['residual']
+    version = params['version']
+    dropout_keep_prob = params['dropout_keep_prob']
+    residual_scale = params['residual_scale']
+
+    with arg_scope(inception_arg_scope()) as sc:
+        # fetch the activation_fn from scope for direct use in build fn
+        key = getattr(layers.conv2d, '_key_op', str(layers.conv2d))
+        activation_fn = sc[key]['activation_fn']
+        print(activation_fn)
+        if residual:
+            assert version == 1 or version == 2
+            logits, endpoints = _build_inception_resnet(
+                inputs,
+                num_classes=num_classes,
+                ver=version,
+                res_scale=residual_scale,
+                activation_fn=activation_fn,  # activation_fn used directly in res blocks
+                dropout_keep_prob=dropout_keep_prob,
+                is_training=is_training,
+                scope=scope)
+        else:
+            assert version == 4
+            logits, endpoints = _build_inception_v4(
+                inputs,
+                num_classes=num_classes,
+                dropout_keep_prob=dropout_keep_prob,
+                is_training=is_training,
+                scope=scope)
 
         return logits, endpoints
