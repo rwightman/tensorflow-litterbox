@@ -70,7 +70,7 @@ class Model(object):
 
     # Return scopes (strings) for output variables to allow filtering for save/restore
     @abc.abstractmethod
-    def output_scopes(self):
+    def output_scopes(self, prefix_scope):
         assert False, 'abstract method not implemented'
         return []
 
@@ -150,8 +150,8 @@ class Model(object):
                 # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
                 # session. This helps the clarity of presentation on tensorboard.
                 tensor_name = self.strip_common_scope(op_name)
-                tf.histogram_summary(tensor_name + '/activations', endpoint)
-                tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(endpoint))
+                tf.summary.histogram(tensor_name + '/activations', endpoint)
+                tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(endpoint))
 
     def strip_common_scope(self, input_name):
         # strip tower scope, present in ops

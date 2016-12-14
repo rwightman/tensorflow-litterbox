@@ -77,16 +77,18 @@ class ModelGoogleSlim(model.Model):
         labels = slim.one_hot_encoding(labels, num_classes=num_classes)
 
         slim.losses.softmax_cross_entropy(
-            tower.outputs, labels, label_smoothing=0.1, weight=1.0)
+            tower.outputs, labels, label_smoothing=0.1, weights=1.0)
 
         if 'AuxLogits' in tower.endpoints:
             slim.losses.softmax_cross_entropy(
                 tower.aux_outputs, labels,
-                label_smoothing=0.1, weight=0.4, scope='aux_loss')
+                label_smoothing=0.1, weights=0.4, scope='aux_loss')
 
-    def output_scopes(self):
+    def output_scopes(self, prefix_scope=''):
         scopes = ['logits', 'Logits', 'AuxLogits/Aux_logits', 'AuxLogits/Logits', 'AuxLogits/Conv2d_2b_1x1']
-        return [self.model_variable_scope + '/' + x for x in scopes]
+        prefix = prefix_scope + '/' if prefix_scope else ''
+        prefix += self.model_variable_scope + '/'
+        return [prefix + x for x in scopes]
 
     def get_predictions(self, outputs, processor):
         if processor is not None:

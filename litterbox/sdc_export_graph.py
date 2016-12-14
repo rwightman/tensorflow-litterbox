@@ -184,7 +184,7 @@ def main(_):
         saver = tf.train.Saver(model_variables)
 
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-            init_op = tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
+            init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
             sess.run(init_op)
 
             g_def = g.as_graph_def(add_shapes=True)

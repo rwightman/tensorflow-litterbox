@@ -71,7 +71,7 @@ def _eval_once(feed, saver, summary_writer, eval_ops, summary_op):
       summary_op: Summary op.
     """
     with tf.Session() as sess:
-        init_op = tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
+        init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
         sess.run(init_op)
 
         checkpoint_path, global_step = util.resolve_checkpoint_path(FLAGS.checkpoint_path)
@@ -175,8 +175,8 @@ def evaluate(feed, model):
         saver = tf.train.Saver(variables_to_restore)
 
         # Build the summary operation based on the TF collection of Summaries.
-        summary_op = tf.merge_all_summaries()
-        summary_writer = tf.train.SummaryWriter(FLAGS.eval_dir, graph=tf.get_default_graph())
+        summary_op = tf.summary.merge_all()
+        summary_writer = tf.summary.FileWriter(FLAGS.eval_dir, graph=tf.get_default_graph())
 
         while True:
             _eval_once(feed, saver, summary_writer, eval_ops, summary_op)
