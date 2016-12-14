@@ -49,7 +49,7 @@ def _predict(feed, saver, output_op, names_op):
     """
     predictions = []
     with tf.Session() as sess:
-        init_op = tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
+        init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
         sess.run(init_op)
 
         checkpoint_path, global_step = util.resolve_checkpoint_path(FLAGS.checkpoint_path)

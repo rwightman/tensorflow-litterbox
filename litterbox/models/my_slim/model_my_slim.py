@@ -76,9 +76,11 @@ class ModelMySlim(model.Model):
 
         loss.loss_softmax_cross_entropy_with_aux(tower.outputs, labels, aux_logits)
 
-    def output_scopes(self):
+    def output_scopes(self, prefix_scope=''):
         # all models currently have their num_class specific FC/output layers under the 'Output' scope
-        return ['Output']
+        scopes = ['Output']
+        prefix = prefix_scope + '/' if prefix_scope else ''
+        return [prefix + x for x in scopes]
 
     def get_predictions(self, outputs, processor):
         if processor is not None:

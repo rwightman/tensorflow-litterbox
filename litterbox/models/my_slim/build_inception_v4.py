@@ -555,7 +555,6 @@ def build_inception(
         # fetch the activation_fn from scope for direct use in build fn
         key = getattr(layers.conv2d, '_key_op', str(layers.conv2d))
         activation_fn = sc[key]['activation_fn']
-        print(activation_fn)
         if residual:
             assert version == 1 or version == 2
             logits, endpoints = _build_inception_resnet(

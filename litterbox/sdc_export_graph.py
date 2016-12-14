@@ -184,7 +184,7 @@ def main(_):
         saver = tf.train.Saver(model_variables)
 
         with tf.Session(config=tf.ConfigProto(allow_soft_placement=True)) as sess:
-            init_op = tf.group(tf.initialize_all_variables(), tf.initialize_local_variables())
+            init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
             sess.run(init_op)
 
             g_def = g.as_graph_def(add_shapes=True)
@@ -200,8 +200,8 @@ def main(_):
                 checkpoint_variable_set.update(reader.get_variable_to_shape_map().keys())
                 variables_to_restore = m['model'].variables_to_restore(
                     restore_outputs=True,
-                    prefix_scope=m['name'],
-                    checkpoint_variable_set=checkpoint_variable_set)
+                    checkpoint_variable_set=checkpoint_variable_set,
+                    prefix_scope=m['name'])
 
                 saver_local = tf.train.Saver(variables_to_restore)
                 saver_local.restore(sess, checkpoint_path)

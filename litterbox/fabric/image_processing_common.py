@@ -303,7 +303,7 @@ def process_for_train(
         # Display the bounding box in the first thread only.
         if not thread_id:
             image_with_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), bbox)
-            tf.image_summary('image_with_bounding_boxes%s' % summary_suffix, image_with_box)
+            tf.summary.image('image_with_bounding_boxes%s' % summary_suffix, image_with_box)
 
         # A large fraction of image datasets contain a human-annotated bounding
         # box delineating the region of the image containing the object of interest.
@@ -324,7 +324,7 @@ def process_for_train(
 
         if not thread_id:
             image_with_distorted_box = tf.image.draw_bounding_boxes(tf.expand_dims(image, 0), distort_bbox)
-            tf.image_summary('images_with_distorted_bounding_box%s' % summary_suffix, image_with_distorted_box)
+            tf.summary.image('images_with_distorted_bounding_box%s' % summary_suffix, image_with_distorted_box)
 
         if params['affine_distortion']:
             rotation_range = params['rotation_range']
@@ -349,7 +349,7 @@ def process_for_train(
         distorted_image.set_shape([height, width, 3])
 
         if not thread_id:
-            tf.image_summary('cropped_resized_image%s' % summary_suffix, tf.expand_dims(distorted_image, 0))
+            tf.summary.image('cropped_resized_image%s' % summary_suffix, tf.expand_dims(distorted_image, 0))
 
         if params['elastic_distortion']:
             if has_cv2:
@@ -369,7 +369,7 @@ def process_for_train(
         distorted_image = distort_color(distorted_image, hue_delta=params['hue_delta'], thread_id=thread_id)
 
         if not thread_id:
-            tf.image_summary('final_distorted_image%s' % summary_suffix, tf.expand_dims(distorted_image, 0))
+            tf.summary.image('final_distorted_image%s' % summary_suffix, tf.expand_dims(distorted_image, 0))
 
         return distorted_image
 

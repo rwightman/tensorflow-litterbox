@@ -118,8 +118,8 @@ def _add_tower_loss(inputs, labels, model, scope):
         loss_name = model.strip_common_scope(l.op.name)
         # Name each loss as '(raw)' and name the moving average version of the loss
         # as the original loss name.
-        tf.scalar_summary('losses/' + loss_name + ' (raw)', l)
-        tf.scalar_summary('losses/' + loss_name, loss_averages.average(l))
+        tf.summary.scalar('losses/' + loss_name + ' (raw)', l)
+        tf.summary.scalar('losses/' + loss_name, loss_averages.average(l))
     with tf.control_dependencies([loss_averages_op]):
         total_loss = tf.identity(total_loss)
         output_loss = tf.identity(tower_losses[0])
@@ -230,12 +230,12 @@ def _build_train_graph(feed, model):
     summaries.extend(input_summaries)
 
     # Add a summary to track the learning rate.
-    summaries.append(tf.scalar_summary('learning_rate', opt_param_sched.learning_rate_tensor))
+    summaries.append(tf.summary.scalar('learning_rate', opt_param_sched.learning_rate_tensor))
 
     # Add histograms for gradients.
     for grad, var in grads:
         if grad is not None:
-            summaries.append(tf.histogram_summary(model.strip_common_scope(var.op.name) + '/gradients', grad))
+            summaries.append(tf.summary.histogram(model.strip_common_scope(var.op.name) + '/gradients', grad))
 
     update_ops = []
 
@@ -245,7 +245,7 @@ def _build_train_graph(feed, model):
 
     # Add histograms for trainable variables.
     for var in tf.trainable_variables():
-        summaries.append(tf.histogram_summary(model.strip_common_scope(var.op.name), var))
+        summaries.append(tf.summary.histogram(model.strip_common_scope(var.op.name), var))
 
     if FLAGS.moving_average_decay:
         moving_average_variables = (tf.trainable_variables() + tf.moving_average_variables())
@@ -260,10 +260,10 @@ def _build_train_graph(feed, model):
     train_op = tf.group(*update_ops)
 
     # Build the summary operation from the last tower summaries.
-    summary_op = tf.merge_summary(summaries)
+    summary_op = tf.summary.merge(summaries)
 
     # Build an initialization operation to run below.
-    init_op = tf.initialize_all_variables()
+    init_op = tf.group(tf.global_variables_initializer(), tf.local_variables_initializer())
 
     return train_op, init_op, summary_op, tower_losses
 
@@ -294,7 +294,7 @@ def train(feed, model):
         train_op, init_op, summary_op, tower_losses = _build_train_graph(feed, model)
 
         # Create a saver.
-        saver = tf.train.Saver(tf.all_variables(), max_to_keep=10)
+        saver = tf.train.Saver(tf.global_variables(), max_to_keep=10)
 
         # Start running operations on the Graph. allow_soft_placement must be set to
         # True to build towers on GPU, as some of the ops do not have GPU
@@ -316,7 +316,7 @@ def train(feed, model):
         # Start the queue runners.
         tf.train.start_queue_runners(sess=sess)
 
-        summary_writer = tf.train.SummaryWriter(FLAGS.train_dir, graph=sess.graph)
+        summary_writer = tf.summary.FileWriter(FLAGS.train_dir, graph=sess.graph)
 
         for step in range(FLAGS.max_steps):
             start_time = time.time()

@@ -138,7 +138,7 @@ class ModelSdc(fabric.model.Model):
                 outputs[k] = processor.decode_output(v, key=k)
         return outputs
 
-    def _remap_variable_names(self, variables, prefix_scope='', checkpoint_variable_set=set()):
+    def _remap_variable_names(self, variables, checkpoint_variable_set, prefix_scope):
 
         def _strip_name(prefix, name):
             name = name[len(prefix):] if name.startswith(prefix) else name
@@ -155,11 +155,8 @@ class ModelSdc(fabric.model.Model):
     def output_scopes(self, prefix_scope=''):
         rel_scopes = ['logits', 'Logits', 'Output', 'Output/OutputXYZ', 'Output/OutputSteer', 'Output/Fc1',
                       'AuxLogits/OutputXYZ', 'AuxLogits/OutputSteer', 'AuxLogits/Fc1']
-        prefix = prefix_scope
-        if prefix:
-            prefix += '/'
+        prefix = prefix_scope + '/' if prefix_scope else ''
         prefix += self.model_variable_scope + '/'
-        print(prefix)
         abs_scopes = [prefix + x for x in rel_scopes]
         return abs_scopes
 

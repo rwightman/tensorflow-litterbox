@@ -70,7 +70,7 @@ class Model(object):
 
     # Return scopes (strings) for output variables to allow filtering for save/restore
     @abc.abstractmethod
-    def output_scopes(self):
+    def output_scopes(self, prefix_scope):
         assert False, 'abstract method not implemented'
         return []
 
@@ -81,12 +81,12 @@ class Model(object):
 
     # Hook to let the model make variable name remapping decisions, especially helpful for
     # handling old or pretrained checkpoints that don't match all current variable names
-    def _remap_variable_names(self, variables, prefix_scope, checkpoint_variable_set):
+    def _remap_variable_names(self, variables, checkpoint_variable_set, prefix_scope):
         return variables
 
     # Return a list of model variables to restore for a Saver
-    def variables_to_restore(self, restore_outputs=True, prefix_scope='', checkpoint_variable_set=set()):
-        scope = prefix_scope if prefix_scope else None
+    def variables_to_restore(self, restore_outputs=True, checkpoint_variable_set=set(), prefix_scope=''):
+        scope = prefix_scope or None
         restore_variables = tf.contrib.framework.variables.get_model_variables(scope=scope)
         exclude_variables = self.output_scopes(prefix_scope=prefix_scope)
         if not restore_outputs:
@@ -108,7 +108,7 @@ class Model(object):
                 [print(x) for x in diff]
 
         restore_variables = self._remap_variable_names(
-            restore_variables, prefix_scope, checkpoint_variable_set)
+            restore_variables, checkpoint_variable_set, prefix_scope)
 
         if checkpoint_variable_set:
             matched = {}
@@ -150,8 +150,8 @@ class Model(object):
                 # Remove 'tower_[0-9]/' from the name in case this is a multi-GPU training
                 # session. This helps the clarity of presentation on tensorboard.
                 tensor_name = self.strip_common_scope(op_name)
-                tf.histogram_summary(tensor_name + '/activations', endpoint)
-                tf.scalar_summary(tensor_name + '/sparsity', tf.nn.zero_fraction(endpoint))
+                tf.summary.histogram(tensor_name + '/activations', endpoint)
+                tf.summary.scalar(tensor_name + '/sparsity', tf.nn.zero_fraction(endpoint))
 
     def strip_common_scope(self, input_name):
         # strip tower scope, present in ops
