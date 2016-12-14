@@ -107,5 +107,5 @@ def parse_proto_sdc(example_serialized):
         gps_f32 = tf.concat(0, [tf.cast(gps_lat_interpolated, tf.float32), tf.cast(gps_long_interpolated, tf.float32)])
     else:
         gps_f32 = tf.pack([tf.cast(gps_lat[1], tf.float32), tf.cast(gps_long[1], tf.float32)])
+    return features['image/encoded'], image_timestamp, camera_id, steering_angle_f32, gps_f32
 
-    return features['image/encoded'], camera_id, image_timestamp, steering_angle_f32, gps_f32

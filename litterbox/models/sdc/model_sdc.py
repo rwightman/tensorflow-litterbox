@@ -138,7 +138,7 @@ class ModelSdc(fabric.model.Model):
                 outputs[k] = processor.decode_output(v, key=k)
         return outputs
 
-    def _remap_variable_names(self, variables, prefix_scope='', checkpoint_variable_set=set()):
+    def _remap_variable_names(self, variables, checkpoint_variable_set, prefix_scope):
 
         def _strip_name(prefix, name):
             name = name[len(prefix):] if name.startswith(prefix) else name

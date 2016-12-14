@@ -200,8 +200,8 @@ def main(_):
                 checkpoint_variable_set.update(reader.get_variable_to_shape_map().keys())
                 variables_to_restore = m['model'].variables_to_restore(
                     restore_outputs=True,
-                    prefix_scope=m['name'],
-                    checkpoint_variable_set=checkpoint_variable_set)
+                    checkpoint_variable_set=checkpoint_variable_set,
+                    prefix_scope=m['name'])
 
                 saver_local = tf.train.Saver(variables_to_restore)
                 saver_local.restore(sess, checkpoint_path)

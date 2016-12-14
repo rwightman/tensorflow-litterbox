@@ -81,12 +81,12 @@ class Model(object):
 
     # Hook to let the model make variable name remapping decisions, especially helpful for
     # handling old or pretrained checkpoints that don't match all current variable names
-    def _remap_variable_names(self, variables, prefix_scope, checkpoint_variable_set):
+    def _remap_variable_names(self, variables, checkpoint_variable_set, prefix_scope):
         return variables
 
     # Return a list of model variables to restore for a Saver
-    def variables_to_restore(self, restore_outputs=True, prefix_scope='', checkpoint_variable_set=set()):
-        scope = prefix_scope if prefix_scope else None
+    def variables_to_restore(self, restore_outputs=True, checkpoint_variable_set=set(), prefix_scope=''):
+        scope = prefix_scope or None
         restore_variables = tf.contrib.framework.variables.get_model_variables(scope=scope)
         exclude_variables = self.output_scopes(prefix_scope=prefix_scope)
         if not restore_outputs:
@@ -108,7 +108,7 @@ class Model(object):
                 [print(x) for x in diff]
 
         restore_variables = self._remap_variable_names(
-            restore_variables, prefix_scope, checkpoint_variable_set)
+            restore_variables, checkpoint_variable_set, prefix_scope)
 
         if checkpoint_variable_set:
             matched = {}
