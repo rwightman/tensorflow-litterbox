@@ -4,6 +4,7 @@ from __future__ import print_function
 
 import tensorflow as tf
 import collections
+from layers import lstm
 slim = tf.contrib.slim
 
 
@@ -269,7 +270,6 @@ def resnet_arg_scope(weight_decay=0.0001,
 def _build_resnet_root(
         net,
         block_cfg,
-        global_pool=True,
         output_stride=None,
         lock_root=False):
     """
@@ -295,12 +295,28 @@ def _build_resnet_root(
         net, block_outputs = stack_blocks_dense(net, block_cfg, output_stride)
         print('Blocks', net.get_shape())
 
-        if global_pool:
-            # Global average pooling.
-            net = tf.reduce_mean(net, [1, 2], name='pool5', keep_dims=True)
-            print('Global pool', net.get_shape())
-
     return net, block_outputs
+
+
+def _build_global_context(net):
+
+    with tf.variable_scope('GlobalContext'):
+        # Reduce feature dimension before LSTM to reduce param count
+        net = slim.conv2d(net, 1024, 1, padding='VALID', scope='conv_reduce_1x1')
+
+        rows = tf.unpack(net, axis=1)
+        net = tf.pack(
+            [lstm.bidir_lstm(r, 512, scope='row%d' % i) for i, r in enumerate(rows)],
+            axis=1)
+        print('Horizontal LSTM', net.get_shape())
+
+        cols = tf.unpack(net, axis=2)
+        net = tf.pack(
+            [lstm.bidir_lstm(r, 512, scope='col%d' % i) for i, r in enumerate(cols)],
+            axis=2)
+        print('Vertical LSTM', net.get_shape())
+
+    return net
 
 
 def _build_output(
@@ -388,6 +404,12 @@ def _build_output(
                 net = slim.conv2d(net, 512, 1, scope='Fc3')
                 print('Fc3', net.get_shape())
                 net = tf.squeeze(net, squeeze_dims=[1, 2])
+        elif version == 7:
+            net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
+            print('Fc1', net.get_shape())
+            net = slim.conv2d(net, 1024, 1, padding='VALID', scope='Fc2')
+            print('Fc2', net.get_shape())
+            net = tf.squeeze(net, squeeze_dims=[1, 2])
 
         print('Pre-output', net.get_shape())
         output = {}
@@ -469,12 +491,22 @@ def resnet_v1_sdc(
                         nets.append(net)
             else:
                 # normal config
+                global_context = True if version == 7 else False
+                output_stride = output_stride if version != 7 else 16
                 net, block_outputs = _build_resnet_root(
                     inputs,
                     block_cfg=blocks,
-                    global_pool=global_pool,
                     output_stride=output_stride,
                     lock_root=lock_root)
+
+                if global_context:
+                    net = _build_global_context(net)
+
+                if global_pool:
+                    # Global average pooling.
+                    net = tf.reduce_mean(net, [1, 2], name='pool5', keep_dims=True)
+                    print('Global pool', net.get_shape())
+
                 nets.append(net)
 
                 if version == 6:
