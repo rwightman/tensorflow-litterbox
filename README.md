@@ -69,7 +69,7 @@ The training/validation data for the `sdc_train.py` and `sdc_eval.py` scripts ar
 #### Train
 Begin training steering model from Google pretrained weights for the root convnet. In this case training a model with input resolution 128*96 with nesterov momentum optimizer having a learning rate of .01. Root network is a Resnet v1 50 and the top level output is specified as the version 5 variant. 'fine_tune' specified so that loading of the output layer weights is not attempted. Per-frame standardization is used for image input normalization.
 
-`python sdc_train.py --data_dir /data/records-elCamino/ --train_dir /train/resnet-small-1 --pretrained_model_path /pretrained/resnet_v1_50.ckpt --root_network resnet_v1_50 --top_versin 5 --fine_tune --batch_size 64 --opt momentum --lr 0.01 --image_size 128 --image_aspect 1.333 --image_norm frame`
+`python sdc_train.py --data_dir /data/records-elCamino/ --train_dir /train/resnet-small-1 --pretrained_model_path /pretrained/resnet_v1_50.ckpt --root_network resnet_v1_50 --top_version 5 --fine_tune --batch_size 64 --opt momentum --lr 0.01 --image_size 128 --image_aspect 1.333 --image_norm frame`
 
 Resume training steering model from partially trained model with same parameters as above but with a different dataset. The optimizer is changed to ADAM.
 
