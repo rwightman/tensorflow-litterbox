@@ -91,6 +91,16 @@ Exporting a model from a python representation of the graph with weights located
 ##### 1. Export Graph
 `python sdc_export_graph.py --image_size 128 --image_aspect 1.333 --image_norm frame --checkpoint_path /train/resnet-small-1a/model.ckpt-25000 --root_network resnet_v1_50 --top_version 5`
 
+Instead of specifying a single model on the command line, a CSV file can be passed using the `--ensemble_path ensemble.csv` argument. An example ensemble CSV:
+```
+root_network,top_version,image_norm,image_size,image_aspect,checkpoint_path,weight
+resnet_v1_50,5,frame,256,1.333,/train/resnet-1b/model.ckpt-12000,.75
+resnet_v1_50,3,global,192,1.333,/train/resnet-2bn/model.ckpt-58000,.75
+resnet_v1_50,6,frame,128,1.333,/train/resnet-small-2c/model.ckpt-15000,1.5
+```
+
+Each model in the ensemble will be instantiated in the graph in its own variable scope. The corresponding weights will be loaded with scope adjusted and the outputs of the models will be combined as a weighted mean with the weights specified in the CSV file.
+
 ##### 2. Freeze Weights
 `python /tensorflow/python/tools/freeze_graph.py --input_graph ./model-graph_def.pb.txt --input_checkpoint ./model-checkpoint --output_graph resnet50-small.model --output_node_names 'output_steer'`
 
