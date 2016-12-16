@@ -298,11 +298,17 @@ def _build_resnet_root(
     return net, block_outputs
 
 
-def _build_global_context(net):
+def _build_global_context(
+        net,
+        is_training=False,
+        bayesian=False,
+        dropout_keep_prob=0.6):
 
     with tf.variable_scope('GlobalContext'):
         # Reduce feature dimension before LSTM to reduce param count
         net = slim.conv2d(net, 1024, 1, padding='VALID', scope='conv_reduce_1x1')
+
+        net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
 
         rows = tf.unpack(net, axis=1)
         net = tf.pack(
@@ -405,9 +411,11 @@ def _build_output(
                 print('Fc3', net.get_shape())
                 net = tf.squeeze(net, squeeze_dims=[1, 2])
         elif version == 7:
-            net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
+            do_dropout = bayesian or is_training
+            net = slim.conv2d(net, 4096, net.get_shape()[1:3], padding='VALID', scope='Fc1')
             print('Fc1', net.get_shape())
-            net = slim.conv2d(net, 1024, 1, padding='VALID', scope='Fc2')
+            net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout')
+            net = slim.conv2d(net, 2048, 1, padding='VALID', scope='Fc2')
             print('Fc2', net.get_shape())
             net = tf.squeeze(net, squeeze_dims=[1, 2])
 
@@ -492,7 +500,7 @@ def resnet_v1_sdc(
             else:
                 # normal config
                 global_context = True if version == 7 else False
-                output_stride = output_stride if version != 7 else 16
+                #output_stride = output_stride if version != 7 else 16
                 net, block_outputs = _build_resnet_root(
                     inputs,
                     block_cfg=blocks,
@@ -500,7 +508,11 @@ def resnet_v1_sdc(
                     lock_root=lock_root)
 
                 if global_context:
-                    net = _build_global_context(net)
+                    net = _build_global_context(
+                        net,
+                        is_training=is_training,
+                        bayesian=bayesian,
+                        dropout_keep_prob=dropout_keep_prob)
 
                 if global_pool:
                     # Global average pooling.
