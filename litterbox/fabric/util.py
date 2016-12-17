@@ -6,9 +6,7 @@ import os
 def resolve_checkpoint_path(input_path):
     global_step = 0
     checkpoint_path = input_path
-    if not os.path.exists(checkpoint_path):
-        return '', global_step
-    if not os.path.isfile(checkpoint_path):
+    if os.path.isdir(checkpoint_path):
         ckpt = tf.train.get_checkpoint_state(checkpoint_path)
         if ckpt and ckpt.model_checkpoint_path:
             checkpoint_path = ckpt.model_checkpoint_path

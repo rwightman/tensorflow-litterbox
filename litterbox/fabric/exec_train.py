@@ -269,7 +269,6 @@ def _build_train_graph(feed, model):
 
 
 def restore_pretrained_variables(sess, model, model_path, restore_outputs=True):
-    assert tf.gfile.Exists(model_path)
     checkpoint_variable_set = set()
     if tf.gfile.IsDirectory(model_path):
         model_path = tf.train.latest_checkpoint(model_path)

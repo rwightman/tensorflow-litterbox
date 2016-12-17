@@ -47,7 +47,6 @@ def main(_):
     processor = ProcessorSdc()
     #processor.mu_law_steering = True
     #processor.standardize_labels = False
-    processor.standardize_input = 'frame'
 
     feed = FeedImagesWithLabels(
         dataset=Challenge2Data(subset=''),
@@ -58,12 +57,6 @@ def main(_):
             'steer': 1,
         #    'xyz': 2,
         },
-
-        #'network': 'resnet_v1_152',
-        #'version': 1,
-
-        #'network': 'resnet_v1_50',
-        #'version': 5,
 
         'network': FLAGS.root_network,
         'version': FLAGS.top_version,
@@ -91,7 +84,7 @@ def main(_):
         df_ang = df_ang.head(num_entries).sort_values(by='frame_id')
         df_ang.to_csv('./output_angle.csv', index=False)
 
-    if coords and coords.shape[0]:
+    if isinstance(coords, np.ndarray) and coords.shape[0]:
         columns_loc = ['frame_id', 'longitude', 'latitude']
         df_loc = pd.DataFrame(
             data={columns_loc[0]: filenames, columns_loc[1]: coords[:, 0], columns_loc[2]: coords[:, 1]},
