@@ -23,14 +23,12 @@ def bidir_lstm(
         dtype=tf.float32,
         scope=None
 ):
-    print('input shape', inputs.get_shape())
     shape = inputs.get_shape().as_list()
     batch_size = shape[0]
     inputs_unpacked = tf.unpack(inputs, axis=1)
 
     cell_fw = tf.contrib.rnn.python.ops.lstm_ops.LSTMBlockCell(num_units=num_units)
     cell_bw = tf.contrib.rnn.python.ops.lstm_ops.LSTMBlockCell(num_units=num_units)
-    print('cell state size', cell_fw.state_size)
 
     if num_layers > 1:
         cell_fw = tf.nn.rnn_cell.MultiRNNCell([cell_fw] * num_layers)
@@ -39,8 +37,10 @@ def bidir_lstm(
     initializer_params = initializer_params or {}
     initializer_params['dtype'] = dtype
     if isinstance(cell_fw.state_size, tuple):
-        initial_state_fw = tuple(initializer_fn([batch_size, s]) for s in cell_fw.state_size)
-        initial_state_bw = tuple(initializer_fn([batch_size, s]) for s in cell_bw.state_size)
+        initial_state_fw = tuple(
+            initializer_fn([batch_size, s], **initializer_params) for s in cell_fw.state_size)
+        initial_state_bw = tuple(
+            initializer_fn([batch_size, s], **initializer_params) for s in cell_bw.state_size)
     else:
         initial_state_fw = initializer_fn(shape=[batch_size, cell_fw.state_size], **initializer_params)
         initial_state_bw = initializer_fn(shape=[batch_size, cell_bw.state_size], **initializer_params)
@@ -55,8 +55,6 @@ def bidir_lstm(
         scope=scope)
 
     outputs = tf.pack(outputs, axis=1)
-    print('output shape', outputs.get_shape())
-
     return outputs
 
 

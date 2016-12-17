@@ -302,13 +302,13 @@ def _build_global_context(
         net,
         is_training=False,
         bayesian=False,
-        dropout_keep_prob=0.6):
+        dropout_keep_prob=0.8):
 
     with tf.variable_scope('GlobalContext'):
         # Reduce feature dimension before LSTM to reduce param count
         net = slim.conv2d(net, 1024, 1, padding='VALID', scope='conv_reduce_1x1')
 
-        net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
+        #net = slim.dropout(net, dropout_keep_prob, is_training=bayesian or is_training, scope='Dropout')
 
         rows = tf.unpack(net, axis=1)
         net = tf.pack(
@@ -412,7 +412,7 @@ def _build_output(
                 net = tf.squeeze(net, squeeze_dims=[1, 2])
         elif version == 7:
             do_dropout = bayesian or is_training
-            net = slim.conv2d(net, 4096, net.get_shape()[1:3], padding='VALID', scope='Fc1')
+            net = slim.conv2d(net, 2048, net.get_shape()[1:3], padding='VALID', scope='Fc1')
             print('Fc1', net.get_shape())
             net = slim.dropout(net, dropout_keep_prob, is_training=do_dropout, scope='Dropout')
             net = slim.conv2d(net, 2048, 1, padding='VALID', scope='Fc2')
@@ -438,7 +438,7 @@ def resnet_v1_sdc(
         blocks,
         output_cfg,
         version,
-        dropout_keep_prob=0.6,
+        dropout_keep_prob=0.8,
         bayesian=False,
         is_training=True,
         global_pool=True,
